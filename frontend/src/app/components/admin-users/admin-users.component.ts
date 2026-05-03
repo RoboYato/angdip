@@ -4,6 +4,7 @@ import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angula
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { AdminService } from '../../services/admin.service';
+import { DepartmentStoreService } from '../../services/department-store.service';
 
 @Component({
   selector: 'app-admin-users',
@@ -42,7 +43,7 @@ import { AdminService } from '../../services/admin.service';
         <div class="form-group">
           <label>Должность</label>
           <select formControlName="position_id" class="form-control">
-            <option [value]="null">— Не выбрана —</option>
+            <option value="">— Не выбрана —</option>
             <option *ngFor="let position of positionsList" [value]="position.id">
               {{ position.name }} (важность: {{ position.importance }})
             </option>
@@ -402,7 +403,8 @@ export class AdminUsersComponent implements OnInit {
 
   constructor(
     private adminService: AdminService,
-    private formBuilder: FormBuilder
+    private formBuilder: FormBuilder,
+    private departmentStore: DepartmentStoreService
   ) {}
 
   ngOnInit(): void {
@@ -524,15 +526,25 @@ private syncAccessLevels(userId: string): void {
   saveUser(): void {
     if (this.userForm.invalid) return;
 
-    const data: any = { ...this.userForm.value };
-    // Не отправляем пустой пароль при редактировании
-    if (!data.password) delete data.password;
+    const v = this.userForm.value;
+    const data: any = {
+      fio: v.fio,
+      login: v.login,
+      email: v.email || null,
+      department: v.department != null && String(v.department).trim() !== '' ? String(v.department).trim() : null,
+      position_id: v.position_id && String(v.position_id).trim() !== '' ? String(v.position_id).trim() : null,
+      isAdmin: !!v.isAdmin
+    };
+    if (v.password) {
+      data.password = v.password;
+    }
 
     if (this.editingId) {
       this.adminService.updateUser(this.editingId, data).subscribe({
         next: (updated) => {
           this.syncRoles(updated.id || this.editingId!);
           this.syncAccessLevels(updated.id || this.editingId!);
+          this.departmentStore.refreshFromApi(this.adminService);
           this.loadUsers();
           this.closeForm();
         },
@@ -541,12 +553,9 @@ private syncAccessLevels(userId: string): void {
     } else {
       this.adminService.createUser(data).subscribe({
         next: (created) => {
-          if (this.selectedUserRoles.length > 0) {
-            this.syncRoles(created.id);
-          }
-          if (this.selectedAccessLevels.length > 0) {  // 🟢 ДОБАВИТЬ
-         this.syncAccessLevels(created.id);
-        }
+          this.syncRoles(created.id);
+          this.syncAccessLevels(created.id);
+          this.departmentStore.refreshFromApi(this.adminService);
           this.loadUsers();
           this.closeForm();
         },

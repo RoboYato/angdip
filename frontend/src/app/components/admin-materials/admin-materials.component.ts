@@ -6,6 +6,7 @@ import { MaterialService } from '../../services/material.service';
 import { CourseService } from '../../services/course.service';
 import { AuthService } from '../../services/auth.service';
 import { AdminService } from '../../services/admin.service';
+import { DepartmentStoreService } from '../../services/department-store.service';
 
 declare var Quill: any;
 
@@ -84,7 +85,8 @@ declare var Quill: any;
                 <p class="hint-text">
                   Достаточно выполнения <strong>хотя бы одного</strong> набора. Для каждого атрибута включите «Проверять»,
                   если он должен совпадать с профилем пользователя; иначе поле игнорируется.
-                  Если наборов нет — используется прежняя логика (связи ролей материала и полей ниже).
+                  Для документации с грифом выше «Публичный» задайте хотя бы один набор (отдел, должность, ответственный, срок, пароль — по необходимости).
+                  Если наборов нет — для фильтра списка документации используются поля материала «требуемые отделы/должности» (legacy).
                 </p>
                 <button type="button" class="btn-add-rule" (click)="addAccessRuleSet()">+ Добавить набор</button>
                 <table class="rule-sets-table" *ngIf="accessRuleSets.length > 0">
@@ -99,6 +101,8 @@ declare var Quill: any;
                       <th>Должность</th>
                       <th>Проверять должность</th>
                       <th>Ответственный</th>
+                      <th>Срок ознакомления</th>
+                      <th>Пароль доступа</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -142,9 +146,18 @@ declare var Quill: any;
                       </td>
                       <td>
                         <select [(ngModel)]="row.responsible_user_id" [name]="'ars_resp_' + i" class="form-control compact-select">
-                          <option value="">— общий ответственный материала —</option>
+                          <option value="">— не задан —</option>
                           <option *ngFor="let user of usersList" [value]="user.id">{{ user.fio }}</option>
                         </select>
+                      </td>
+                      <td>
+                        <input type="datetime-local" class="form-control compact-dt"
+                               [(ngModel)]="row.deadline" [name]="'ars_dl_' + i">
+                      </td>
+                      <td>
+                        <input type="password" class="form-control compact-pw" autocomplete="new-password"
+                               [(ngModel)]="row.access_password" [name]="'ars_pwd_' + i"
+                               [placeholder]="row._passwordSet ? 'Задан — введите новый для смены' : 'Необязательно'">
                       </td>
                       <td>
                         <button type="button" class="btn-remove-rule" (click)="removeAccessRuleSet(i)">×</button>
@@ -152,68 +165,6 @@ declare var Quill: any;
                     </tr>
                   </tbody>
                 </table>
-              </div>
-
-              <!-- Поля отдела и должности — обязательны для документации с грифом -->
-              <div *ngIf="currentMaterial.material_type === 'documentation' && currentMaterial.access_level_code !== 'PUBLIC'" class="form-row classified-fields">
-                <div class="form-group">
-                  <label>Отдел (обязательно для документации с грифом) *</label>
-                  <input type="text" [(ngModel)]="deptInput" name="required_department" list="deptSuggestions"
-                         required autocomplete="off">
-                  <datalist id="deptSuggestions">
-                    <option *ngFor="let d of departmentsList" [value]="d"></option>
-                  </datalist>
-                  <small class="hint-text">Выберите из подсказок или введите новый отдел, затем «+ Добавить».</small>
-                  <div class="tags-row">
-                    <span *ngFor="let d of currentMaterial.required_departments" class="tag">
-                      {{ d }} <button type="button" (click)="removeDept(d)">×</button>
-                    </span>
-                    <button type="button" class="btn-add-tag" (click)="addDept()">+ Добавить</button>
-                  </div>
-                </div>
-                <div class="form-group">
-                  <label>Должность (обязательно для документации с грифом) *</label>
-                  <select class="form-control" (change)="onPositionSelect($event)">
-                    <option value="">— Выберите должность —</option>
-                    <option *ngFor="let position of positionsList" [value]="position.id">
-                      {{ position.name }} (важность: {{ position.importance }})
-                    </option>
-                  </select>
-                  <div class="tags-row">
-                    <span *ngFor="let p of currentMaterial.required_positions" class="tag">
-                      {{ getPositionNameById(p) || p }} 
-                      <button type="button" (click)="removePos(p)">×</button>
-                    </span>
-                  </div>
-                  <small class="hint-text">Выберите должность из списка и нажмите +</small>
-                </div>
-              </div>
-              <div *ngIf="currentMaterial.material_type === 'documentation'" class="form-row classified-fields">
-                <div class="form-group">
-                  <label>Ответственный за материал (общий) *</label>
-                  <select [(ngModel)]="currentMaterial.responsible_user_id" name="responsible_user_id" class="form-control" required>
-                    <option value="">— Выберите ответственного —</option>
-                    <option *ngFor="let user of usersList" [value]="user.id">
-                      {{ user.fio }} ({{ user.position || 'без должности' }})
-                    </option>
-                  </select>
-                  <small class="hint-text">Используется для наборов правил без своего ответственного и для напоминаний.</small>
-                </div>
-                <div class="form-group">
-                  <label>Срок ознакомления (дедлайн)</label>
-                  <input type="datetime-local" [(ngModel)]="passwordExpiresInput" name="password_expires_at" class="form-control">
-                  <small class="hint-text">До этой даты сотрудники должны открыть документ; по графику ответственному приходят напоминания.</small>
-                </div>
-              </div>
-              <!-- Пароль доступа — если задан, пользователь может разблокировать материал паролем -->
-              <div class="form-group" *ngIf="currentMaterial.access_level_code !== 'PUBLIC'">
-                <label>🔑 Пароль доступа <span class="hint">(необязательно — позволяет пройти ABAC по паролю)</span></label>
-                <p class="hint-text warn" *ngIf="isPasswordDeadlineInPast()">
-                  Срок ознакомления уже в прошлом — разблокировка по паролю на бэкенде отключена, пока администратор не продлит дедлайн.
-                </p>
-                <input type="password" [(ngModel)]="currentMaterial.access_password" name="access_password"
-                       placeholder="Оставьте пустым, чтобы не менять / убрать пароль">
-                <small class="hint-text">Если заполнено — пароль будет сохранён (перезапишет прежний). Пустое поле при редактировании — пароль не меняется.</small>
               </div>
 
               <div class="form-group">
@@ -326,8 +277,8 @@ declare var Quill: any;
                     📚 {{ material.course_title }}
                   </span>
                   <!-- 🟢 СЮДА ДОБАВЬТЕ СТРОКУ ДЛЯ ОТВЕТСТВЕННОГО -->
-<span class="responsible" *ngIf="(material.responsible_user_id || material.responsible_leader) && material.material_type === 'documentation'">
-  👤 Ответственный: {{ getResponsibleName(material.responsible_user_id || material.responsible_leader) }}
+<span class="responsible" *ngIf="material.material_type === 'documentation' && firstRuleResponsibleLabel(material)">
+  👤 Ответственный (ABAC): {{ firstRuleResponsibleLabel(material) }}
 </span>
                 </div>
                 <div class="material-actions">
@@ -355,6 +306,7 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
   roles: any[] = [];
   accessLevelsList: any[] = [];
   accessRuleSets: Array<{
+    id?: string;
     role: string;
     classification: string;
     position: string;
@@ -364,14 +316,14 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
     position_required: boolean;
     department_required: boolean;
     responsible_user_id: string;
+    deadline: string;
+    access_password: string;
+    _passwordSet?: boolean;
   }> = [];
-  passwordExpiresInput = '';
   filterType: string = 'all';
   pendingFiles: File[] = [];
   attachedFiles: any[] = [];
   editorHtml: string = '';
-  deptInput: string = '';
-  posInput: string = '';
   /** Подсказки отделов с сервера (GET /api/admin/departments) */
   departmentsList: string[] = [];
 
@@ -383,10 +335,8 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
     course_id: '',
     access_level_code: 'PUBLIC',
     status: 'draft',
-    required_departments: [],
-    required_positions: [],
-     responsible_user_id: '' as string,
-     responsible_leader: null as string | null
+    required_departments: [] as string[],
+    required_positions: [] as string[]
   };
 
   editingMaterial: boolean = false;
@@ -396,11 +346,15 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
     private courseService: CourseService,
     private authService: AuthService,
     private adminService: AdminService,
+    private departmentStore: DepartmentStoreService,
     private ngZone: NgZone,
     private router: Router
   ) {}
 
   ngOnInit(): void {
+    this.departmentStore.departments$.subscribe((d) => {
+      this.departmentsList = d;
+    });
     this.loadCourses();
     this.loadMaterials();
     this.loadRoles();
@@ -444,19 +398,9 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
     }
   }
 
-  /** Дедлайн ознакомления в прошлом — пароль на бэкенде не принимается (см. unlockMaterial). */
-  isPasswordDeadlineInPast(): boolean {
-    if (!this.passwordExpiresInput) {
-      return false;
-    }
-    const t = new Date(this.passwordExpiresInput).getTime();
-    return !Number.isNaN(t) && t < Date.now();
-  }
-
   addAccessRuleSet(): void {
     const cls = this.currentMaterial.access_level_code;
     const classification = cls && cls !== 'PUBLIC' ? String(cls) : '';
-    const rid = this.normalizeUserIdString(this.currentMaterial.responsible_user_id);
     this.accessRuleSets.push({
       role: '',
       classification,
@@ -466,51 +410,32 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
       classification_required: !!classification,
       position_required: false,
       department_required: false,
-      responsible_user_id: rid || ''
+      responsible_user_id: '',
+      deadline: '',
+      access_password: '',
+      _passwordSet: false
     });
+  }
+
+  firstRuleResponsibleLabel(material: any): string {
+    let ars = material?.access_rule_sets;
+    if (typeof ars === 'string') {
+      try {
+        ars = JSON.parse(ars);
+      } catch {
+        return '';
+      }
+    }
+    if (!Array.isArray(ars)) {
+      return '';
+    }
+    const row = ars.find((x: any) => this.normalizeUserIdString(x?.responsible_user_id));
+    return row ? this.getResponsibleName(String(row.responsible_user_id)) : '';
   }
 
   removeAccessRuleSet(index: number): void {
     this.accessRuleSets.splice(index, 1);
   }
-
-  addDept(): void {
-    const v = this.deptInput.trim();
-    if (v && !this.currentMaterial.required_departments.includes(v)) {
-      this.currentMaterial.required_departments = [...this.currentMaterial.required_departments, v];
-    }
-    this.deptInput = '';
-  }
-
-  removeDept(d: string): void {
-    this.currentMaterial.required_departments = this.currentMaterial.required_departments.filter((x: string) => x !== d);
-  }
-
-  addPos(): void {
-    const v = this.posInput.trim();
-    if (v && !this.currentMaterial.required_positions.includes(v)) {
-      this.currentMaterial.required_positions = [...this.currentMaterial.required_positions, v];
-    }
-    this.posInput = '';
-  }
-getPositionNameById(positionId: string): string {
-  const position = this.positionsList.find(p => p.id === positionId);
-  return position ? `${position.name} (важность: ${position.importance})` : positionId;
-}
-
-// Обработчик выбора должности из выпадающего списка
-onPositionSelect(event: any): void {
-  const positionId = event.target.value;
-  if (positionId && !this.currentMaterial.required_positions.includes(positionId)) {
-    this.currentMaterial.required_positions = [...this.currentMaterial.required_positions, positionId];
-  }
-  // Сбросить select
-  event.target.value = '';
-}
-removePos(p: string): void {
-  this.currentMaterial.required_positions = this.currentMaterial.required_positions.filter((x: string) => x !== p);
-}
-
 
 getResponsibleName(userId: string): string {
   const user = this.usersList.find(u => u.id === userId);
@@ -770,15 +695,7 @@ loadPositions(): void {
 }
 
   loadDepartments(): void {
-    this.adminService.getDepartments().subscribe({
-      next: (list) => {
-        this.departmentsList = Array.isArray(list) ? list : [];
-      },
-      error: (err) => {
-        console.error('Ошибка загрузки отделов:', err);
-        this.departmentsList = [];
-      }
-    });
+    this.departmentStore.refreshFromApi(this.adminService);
   }
 
 loadResponsibleUsers(): void {
@@ -803,14 +720,14 @@ loadResponsibleUsers(): void {
   }
 
   saveMaterial(): void {
-    if (this.currentMaterial.material_type === 'documentation') {
-      if (
-        !this.normalizeUserIdString(this.currentMaterial.responsible_user_id) &&
-        !this.normalizeUserIdString(this.currentMaterial.responsible_leader)
-      ) {
-        alert('Для документации необходимо выбрать ответственного за материал!');
-        return;
-      }
+    if (
+      this.currentMaterial.material_type === 'documentation' &&
+      this.currentMaterial.access_level_code &&
+      this.currentMaterial.access_level_code !== 'PUBLIC' &&
+      this.accessRuleSets.length === 0
+    ) {
+      alert('Для документации с грифом добавьте хотя бы один набор правил ABAC (отдел, должность, ответственный и т.д.).');
+      return;
     }
     // Получаем HTML из редактора
     const editorEl = this.quillEditorRef?.nativeElement;
@@ -823,6 +740,7 @@ loadResponsibleUsers(): void {
     }
 
     const access_rule_sets = this.accessRuleSets.map((row) => ({
+      id: row.id || null,
       role: row.role?.trim() || null,
       classification: row.classification?.trim() || null,
       position: row.position?.trim() || null,
@@ -831,18 +749,27 @@ loadResponsibleUsers(): void {
       classification_required: !!row.classification_required,
       position_required: !!row.position_required,
       department_required: !!row.department_required,
-      responsible_user_id: this.normalizeUserIdString(row.responsible_user_id)
+      responsible_user_id: this.normalizeUserIdString(row.responsible_user_id),
+      deadline:
+        row.deadline && String(row.deadline).trim()
+          ? new Date(row.deadline).toISOString()
+          : null,
+      access_password: row.access_password != null ? String(row.access_password) : ''
     }));
-    const rid = this.normalizeUserIdString(this.currentMaterial.responsible_user_id);
+
     const payload: any = {
       ...this.currentMaterial,
       access_rule_sets,
-      responsible_user_id: rid,
-      responsible_leader: rid || this.normalizeUserIdString(this.currentMaterial.responsible_leader),
-      password_expires_at: this.passwordExpiresInput
-        ? new Date(this.passwordExpiresInput).toISOString()
-        : null
+      responsible_user_id: null,
+      responsible_leader: null,
+      password_expires_at: null,
+      access_password: null
     };
+
+    if (this.currentMaterial.material_type === 'documentation') {
+      payload.required_departments = [];
+      payload.required_positions = [];
+    }
 
     const save$ = this.editingMaterial
       ? this.materialService.updateMaterial(this.currentMaterial.id, payload)
@@ -884,6 +811,7 @@ loadResponsibleUsers(): void {
     }
     this.accessRuleSets = Array.isArray(ars)
       ? ars.map((r: any) => ({
+          id: r.id || undefined,
           role: r.role || '',
           classification: r.classification || '',
           position: r.position || '',
@@ -892,19 +820,12 @@ loadResponsibleUsers(): void {
           classification_required: !!r.classification_required,
           position_required: !!r.position_required,
           department_required: !!r.department_required,
-          responsible_user_id: this.normalizeUserIdString(r.responsible_user_id) || ''
+          responsible_user_id: this.normalizeUserIdString(r.responsible_user_id) || '',
+          deadline: r.deadline ? this.toDatetimeLocalValue(String(r.deadline)) : '',
+          access_password: '',
+          _passwordSet: !!r.password_is_set
         }))
       : [];
-    const resp =
-      this.normalizeUserIdString(material.responsible_user_id) ||
-      this.normalizeUserIdString(material.responsible_leader);
-    this.currentMaterial.responsible_user_id = resp || '';
-    this.passwordExpiresInput = material.password_expires_at
-      ? this.toDatetimeLocalValue(String(material.password_expires_at))
-      : '';
-    if (this.isPasswordDeadlineInPast()) {
-      this.currentMaterial.access_password = '';
-    }
     this.editingMaterial = true;
     this.attachedFiles = material.files || [];
     this.pendingFiles = [];
@@ -949,18 +870,12 @@ loadResponsibleUsers(): void {
       access_level_code: 'PUBLIC',
       status: 'draft',
       required_departments: [],
-      required_positions: [],
-      access_password: '',
-      responsible_user_id: '',
-      responsible_leader: null
+      required_positions: []
     };
-    this.passwordExpiresInput = '';
     this.editingMaterial = false;
     this.accessRuleSets = [];
     this.pendingFiles = [];
     this.attachedFiles = [];
-    this.deptInput = '';
-    this.posInput = '';
     if (this.quillEditorRef?.nativeElement) {
       this.quillEditorRef.nativeElement.innerHTML = '';
     }

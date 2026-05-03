@@ -263,12 +263,18 @@ export async function createUserInLMS(req: AuthRequest, res: Response) {
     const userId = uuidv4();
     const passwordHash = await hashPassword(password);
 
-    // 🟢 ОБНОВЛЕННЫЙ ЗАПРОС - добавляем position_id
-     const userResult = await pool.query(
+    const pid =
+      position_id != null &&
+      String(position_id).trim() !== '' &&
+      String(position_id).toLowerCase() !== 'null'
+        ? String(position_id).trim()
+        : null;
+
+    const userResult = await pool.query(
       `INSERT INTO users (id, fio, login, password_hash, email, is_admin, position, department, position_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, fio, login, email, is_admin, position, department, position_id`,
-      [userId, fio, login, passwordHash, email || null, isAdmin || false, position || null, department || null, position_id || null]
+      [userId, fio, login, passwordHash, email || null, isAdmin || false, position || null, department || null, pid]
     );
 
     res.status(201).json(userResult.rows[0]);

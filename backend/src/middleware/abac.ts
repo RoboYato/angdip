@@ -2,7 +2,7 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from './auth';
 import { pool } from '../db/connection';
 import {
-  evaluateAccessRuleSets,
+  evaluateMaterialAbacAccess,
   type AccessRuleSetRow,
   type UserAccessRuleContext
 } from '../services/accessRuleSets';
@@ -36,7 +36,10 @@ function mapRuleRow(row: Record<string, unknown>): AccessRuleSetRow {
     role_required: !!row.role_required,
     classification_required: !!row.classification_required,
     position_required: !!row.position_required,
-    department_required: !!row.department_required
+    department_required: !!row.department_required,
+    responsible_user_id: (row.responsible_user_id as string) ?? null,
+    deadline: (row.deadline as string | Date | null | undefined) ?? null,
+    access_password_hash: (row.access_password_hash as string) ?? null
   };
 }
 
@@ -133,7 +136,8 @@ export async function abacMiddleware(
 
     const ruleSetsResult = await pool.query(
       `SELECT role, classification, "position" as position, department,
-              role_required, classification_required, position_required, department_required, sort_order
+              role_required, classification_required, position_required, department_required,
+              responsible_user_id, deadline, access_password_hash, sort_order
        FROM material_access_rule_sets
        WHERE material_id = $1
        ORDER BY sort_order ASC`,
@@ -148,6 +152,7 @@ export async function abacMiddleware(
     const hasDirectAccess = directAccessResult.rows.length > 0;
 
     const userCtx: UserAccessRuleContext = {
+      userId: req.user.userId,
       roles: userAttributes.roles,
       accessLevelCodes: userAccessCodes,
       department: userAttributes.department ?? null,
@@ -159,14 +164,10 @@ export async function abacMiddleware(
     let hasAccess: boolean;
 
     if (accessRuleSets.length > 0) {
-      const departmentOk =
-        requiredDepartments.length === 0 ||
-        (userAttributes.department != null &&
-          requiredDepartments.includes(userAttributes.department));
-      const ruleMatch = evaluateAccessRuleSets(userCtx, accessRuleSets);
+      const ruleMatch = evaluateMaterialAbacAccess(userCtx, accessRuleSets, hasDirectAccess);
       const shortcutDeptD =
         !!userAttributes.department && userAttributes.department.endsWith('D');
-      hasAccess = hasDirectAccess || shortcutDeptD || (departmentOk && ruleMatch);
+      hasAccess = hasDirectAccess || shortcutDeptD || ruleMatch;
     } else {
       const abacAttributes: ABACAttributes = {
         userAttributes,

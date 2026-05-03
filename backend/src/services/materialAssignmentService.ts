@@ -46,6 +46,7 @@ export async function loadActiveUsersForRuleMatching(): Promise<UserRowForRules[
 
 export function userRowToContext(row: UserRowForRules): UserAccessRuleContext {
   return {
+    userId: row.id,
     roles: row.role_names,
     accessLevelCodes: row.access_codes,
     department: row.department,
@@ -64,7 +65,10 @@ export function ruleDbRowToAccessRule(row: Record<string, unknown>): AccessRuleS
     role_required: !!row.role_required,
     classification_required: !!row.classification_required,
     position_required: !!row.position_required,
-    department_required: !!row.department_required
+    department_required: !!row.department_required,
+    responsible_user_id: (row.responsible_user_id as string) ?? null,
+    deadline: (row.deadline as string | Date | null | undefined) ?? null,
+    access_password_hash: (row.access_password_hash as string) ?? null
   };
 }
 

@@ -13,9 +13,17 @@ export interface AccessRuleSetRow {
   classification_required: boolean;
   position_required: boolean;
   department_required?: boolean;
+  /** Если задан — доступ только у этого пользователя (ответственный за набор). */
+  responsible_user_id?: string | null;
+  /** Срок ознакомления: доступ, пока дата строго в будущем. */
+  deadline?: string | Date | null;
+  /** Хеш пароля (только на сервере); не передавать клиенту. */
+  access_password_hash?: string | null;
 }
 
 export interface UserAccessRuleContext {
+  /** id пользователя (для проверки ответственного) */
+  userId: string;
   /** Имена ролей пользователя */
   roles: string[];
   /** Коды уровней доступа (грифов), назначенных пользователю */
@@ -34,6 +42,16 @@ export function userMatchesAccessRuleSet(
   user: UserAccessRuleContext,
   rule: AccessRuleSetRow
 ): boolean {
+  if (rule.deadline != null && String(rule.deadline).trim() !== '') {
+    const t = new Date(rule.deadline as string).getTime();
+    if (!Number.isNaN(t) && t <= Date.now()) {
+      return false;
+    }
+  }
+  const resp = rule.responsible_user_id?.trim();
+  if (resp && /^[0-9a-fA-F-]{36}$/.test(resp) && resp !== user.userId) {
+    return false;
+  }
   if (rule.role_required) {
     if (!rule.role || !user.roles.includes(rule.role)) {
       return false;
@@ -66,7 +84,35 @@ export function userMatchesAccessRuleSet(
   return true;
 }
 
-/** true, если хотя бы один набор выполнен; при пустом списке — false (используйте наследие ABAC снаружи). */
+/**
+ * OR по наборам: подходит любой набор, у которого выполнены атрибуты.
+ * Пароль: если у набора есть хеш, доступ только при hasPasswordUnlock (material_users).
+ */
+export function evaluateMaterialAbacAccess(
+  user: UserAccessRuleContext,
+  rules: AccessRuleSetRow[],
+  hasPasswordUnlock: boolean
+): boolean {
+  if (!rules.length) {
+    return false;
+  }
+  for (const rule of rules) {
+    if (!userMatchesAccessRuleSet(user, rule)) {
+      continue;
+    }
+    const hash = rule.access_password_hash?.trim();
+    if (hash) {
+      if (hasPasswordUnlock) {
+        return true;
+      }
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+/** true, если хотя бы один набор выполнен по атрибутам (без учёта пароля набора). */
 export function evaluateAccessRuleSets(
   user: UserAccessRuleContext,
   rules: AccessRuleSetRow[]
@@ -75,4 +121,48 @@ export function evaluateAccessRuleSets(
     return false;
   }
   return rules.some((rule) => userMatchesAccessRuleSet(user, rule));
+}
+
+/** Документация в списке: без разблокировки скрывать наборы только с паролем. */
+export function documentationVisibleForUser(
+  user: UserAccessRuleContext,
+  rules: AccessRuleSetRow[],
+  hasPasswordUnlock: boolean
+): boolean {
+  return evaluateMaterialAbacAccess(user, rules, hasPasswordUnlock);
+}
+
+/** Фильтр по полям материала (legacy), если наборов правил нет. */
+export function legacyDocumentationDepartmentsPositionsOk(
+  userDept: string,
+  userPosId: string,
+  userPosText: string,
+  requiredDepartments: unknown,
+  requiredPositions: unknown
+): boolean {
+  const reqDept = normalizeJsonStringArray(requiredDepartments);
+  const reqPos = normalizeJsonStringArray(requiredPositions);
+  const deptOk =
+    reqDept.length === 0 ||
+    (userDept.length > 0 && reqDept.some((d) => d.trim() === userDept.trim()));
+  const posOk =
+    reqPos.length === 0 ||
+    (userPosId.length > 0 && reqPos.some((p) => p.trim() === userPosId.trim())) ||
+    (userPosText.length > 0 && reqPos.some((p) => p.trim() === userPosText.trim()));
+  return deptOk && posOk;
+}
+
+function normalizeJsonStringArray(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.map((x) => String(x));
+  }
+  if (typeof raw === 'string' && raw) {
+    try {
+      const p = JSON.parse(raw);
+      return Array.isArray(p) ? p.map((x: unknown) => String(x)) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }

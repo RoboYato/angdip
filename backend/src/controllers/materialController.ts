@@ -15,8 +15,16 @@ import {
   isNonPublicAccessLevel
 } from '../services/classifiedMaterialRepository';
 import { fetchMaterialUnified } from '../services/materialMerge';
+import {
+  documentationVisibleForUser,
+  legacyDocumentationDepartmentsPositionsOk,
+  userMatchesAccessRuleSet,
+  type AccessRuleSetRow,
+  type UserAccessRuleContext
+} from '../services/accessRuleSets';
 
 export type AccessRuleSetInput = {
+  id?: string | null;
   role?: string | null;
   classification?: string | null;
   position?: string | null;
@@ -26,23 +34,54 @@ export type AccessRuleSetInput = {
   position_required?: boolean;
   department_required?: boolean;
   responsible_user_id?: string | null;
+  deadline?: string | null;
+  access_password?: string | null;
 };
 
 export async function replaceMaterialAccessRuleSets(
   materialId: string,
   sets: AccessRuleSetInput[] | undefined | null
 ): Promise<void> {
+  const prevRes = await pool.query(
+    `SELECT id, access_password_hash FROM material_access_rule_sets WHERE material_id = $1`,
+    [materialId]
+  );
+  const prevHashById = new Map<string, string | null>();
+  for (const r of prevRes.rows) {
+    prevHashById.set(String(r.id), (r.access_password_hash as string) || null);
+  }
+
   await pool.query('DELETE FROM material_access_rule_sets WHERE material_id = $1', [materialId]);
   if (!sets || !sets.length) {
     return;
   }
   let sort = 0;
   for (const s of sets) {
+    const plainPwd =
+      s.access_password != null && String(s.access_password).trim() !== ''
+        ? String(s.access_password).trim()
+        : '';
+    let accessHash: string | null = null;
+    if (plainPwd) {
+      accessHash = await bcrypt.hash(plainPwd, 10);
+    } else if (s.id && prevHashById.has(String(s.id))) {
+      accessHash = prevHashById.get(String(s.id)) ?? null;
+    }
+
+    let deadline: Date | null = null;
+    if (s.deadline != null && String(s.deadline).trim() !== '') {
+      const d = new Date(String(s.deadline));
+      if (!Number.isNaN(d.getTime())) {
+        deadline = d;
+      }
+    }
+
     await pool.query(
       `INSERT INTO material_access_rule_sets (
         id, material_id, role, classification, "position", department,
-        role_required, classification_required, position_required, department_required, sort_order, responsible_user_id
-      ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        role_required, classification_required, position_required, department_required,
+        sort_order, responsible_user_id, deadline, access_password_hash
+      ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         materialId,
         s.role || null,
@@ -54,7 +93,9 @@ export async function replaceMaterialAccessRuleSets(
         !!s.position_required,
         !!s.department_required,
         sort++,
-        s.responsible_user_id || null
+        sanitizeResponsibleUserId(s.responsible_user_id),
+        deadline,
+        accessHash
       ]
     );
   }
@@ -112,7 +153,8 @@ export async function getAllMaterials(req: AuthRequest, res: Response) {
             SELECT mars.id, mars.role, mars.classification, mars."position" AS position,
                    mars.department, mars.role_required, mars.classification_required,
                    mars.position_required, mars.department_required,
-                   mars.sort_order, mars.responsible_user_id
+                   mars.sort_order, mars.responsible_user_id, mars.deadline,
+                   (mars.access_password_hash IS NOT NULL AND length(trim(mars.access_password_hash)) > 0) AS password_is_set
             FROM material_access_rule_sets mars
             WHERE mars.material_id = m.id
           ) t
@@ -839,23 +881,104 @@ export async function unlockMaterial(req: AuthRequest, res: Response) {
 
     const material: any = { ...materialRow };
 
-    if (!material.access_password) {
-      return res.status(403).json({ message: 'Доступ по паролю не настроен для данного материала' });
+    const userRowResult = await pool.query(
+      `SELECT u.position, u.department, u.position_id::text AS position_id, p.name AS position_name,
+              COALESCE(array_agg(r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS role_names
+       FROM users u
+       LEFT JOIN positions p ON p.id = u.position_id
+       LEFT JOIN user_roles ur ON ur.user_id = u.id
+       LEFT JOIN roles r ON r.id = ur.role_id
+       WHERE u.id = $1
+       GROUP BY u.id, u.position, u.department, u.position_id, p.name`,
+      [req.user.userId]
+    );
+    if (userRowResult.rows.length === 0) {
+      return res.status(403).json({ message: 'Пользователь не найден' });
+    }
+    const ur = userRowResult.rows[0];
+    const clearanceResult = await pool.query(
+      `SELECT al.code
+       FROM user_access_levels ual
+       JOIN access_levels al ON al.id = ual.access_level_id
+       WHERE ual.user_id = $1`,
+      [req.user.userId]
+    );
+    const userAccessCodes = clearanceResult.rows.map((r) => r.code as string);
+
+    const ruleSetsResult = await pool.query(
+      `SELECT role, classification, "position" as position, department,
+              role_required, classification_required, position_required, department_required,
+              responsible_user_id, deadline, access_password_hash, sort_order
+       FROM material_access_rule_sets
+       WHERE material_id = $1
+       ORDER BY sort_order ASC`,
+      [id]
+    );
+
+    const userCtx: UserAccessRuleContext = {
+      userId: req.user.userId,
+      roles: (ur.role_names as string[]) || [],
+      accessLevelCodes: userAccessCodes,
+      department: ur.department ?? null,
+      positionText: ur.position ?? null,
+      positionId: ur.position_id ?? null,
+      positionName: ur.position_name ?? null
+    };
+
+    let matchedRule = false;
+    for (const dbRow of ruleSetsResult.rows) {
+      const rule: AccessRuleSetRow = {
+        role: (dbRow.role as string) ?? null,
+        classification: (dbRow.classification as string) ?? null,
+        position: (dbRow.position as string) ?? null,
+        department: (dbRow.department as string) ?? null,
+        role_required: !!dbRow.role_required,
+        classification_required: !!dbRow.classification_required,
+        position_required: !!dbRow.position_required,
+        department_required: !!dbRow.department_required,
+        responsible_user_id: (dbRow.responsible_user_id as string) ?? null,
+        deadline: dbRow.deadline ?? null,
+        access_password_hash: (dbRow.access_password_hash as string) ?? null
+      };
+      const hash = rule.access_password_hash?.trim();
+      if (!hash) {
+        continue;
+      }
+      if (!userMatchesAccessRuleSet(userCtx, rule)) {
+        continue;
+      }
+      const ok = await bcrypt.compare(password, hash);
+      if (ok) {
+        matchedRule = true;
+        break;
+      }
     }
 
-    if (isPasswordDeadlinePassed(material.password_expires_at)) {
-      await logAction(req.user.userId, 'unlock_failed', id, { reason: 'password_expired' }, req.ip);
-      return res.status(403).json({
-        message: 'Срок действия доступа по паролю истёк. Обратитесь к администратору.',
-        code: 'password_expired'
-      });
+    if (!matchedRule && material.access_password) {
+      if (isPasswordDeadlinePassed(material.password_expires_at)) {
+        await logAction(req.user.userId, 'unlock_failed', id, { reason: 'password_expired' }, req.ip);
+        return res.status(403).json({
+          message: 'Срок действия доступа по паролю истёк. Обратитесь к администратору.',
+          code: 'password_expired'
+        });
+      }
+      const legacyOk = await bcrypt.compare(password, material.access_password);
+      if (legacyOk) {
+        matchedRule = true;
+      }
     }
 
-    const passwordMatch = await bcrypt.compare(password, material.access_password);
-    if (!passwordMatch) {
+    if (!matchedRule) {
       await logAction(req.user.userId, 'unlock_failed', id, { reason: 'wrong_password' }, req.ip);
       return res.status(403).json({ message: 'Неверный пароль' });
     }
+
+    await pool.query(
+      `INSERT INTO material_users (id, material_id, user_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT DO NOTHING`,
+      [uuidv4(), id, req.user.userId]
+    );
 
     // Decrypt content if encrypted
     if (material.encrypted_content && material.encryption_key_id) {
@@ -1147,8 +1270,20 @@ export async function markAsCompleted(req: AuthRequest, res: Response) {
   }
 }
 
+function stripDocumentationRuleSecrets(row: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...row };
+  const rs = copy.access_rule_sets;
+  if (Array.isArray(rs)) {
+    copy.access_rule_sets = rs.map((r: Record<string, unknown>) => {
+      const { access_password_hash: _h, ...rest } = r;
+      return rest;
+    });
+  }
+  return copy;
+}
+
 /**
- * Обучающая документация: все опубликованные материалы с material_type = 'documentation' для любого авторизованного пользователя.
+ * Документация: опубликованные материалы с учётом ABAC-наборов или legacy-полей материала.
  */
 export async function getDocumentation(req: AuthRequest, res: Response) {
   try {
@@ -1157,53 +1292,114 @@ export async function getDocumentation(req: AuthRequest, res: Response) {
     }
 
     const userRes = await pool.query(
-      `SELECT u.department, u.position, u.position_id::text AS position_id
-       FROM users u WHERE u.id = $1`,
+      `SELECT u.id, u.department, u.position, u.position_id::text AS position_id, p.name AS position_name,
+              COALESCE(array_agg(r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS role_names
+       FROM users u
+       LEFT JOIN positions p ON p.id = u.position_id
+       LEFT JOIN user_roles ur ON ur.user_id = u.id
+       LEFT JOIN roles r ON r.id = ur.role_id
+       WHERE u.id = $1
+       GROUP BY u.id, u.department, u.position, u.position_id, p.name`,
       [req.user.userId]
     );
-    const ur = userRes.rows[0] || {};
-    const userDept = ur.department != null ? String(ur.department).trim() : '';
-    const userPosId = ur.position_id != null ? String(ur.position_id).trim() : '';
-    const userPosText = ur.position != null ? String(ur.position).trim() : '';
+    if (userRes.rows.length === 0) {
+      return res.status(401).json({ message: 'Не авторизован' });
+    }
+    const ur = userRes.rows[0];
+
+    const clearanceResult = await pool.query(
+      `SELECT al.code
+       FROM user_access_levels ual
+       JOIN access_levels al ON al.id = ual.access_level_id
+       WHERE ual.user_id = $1`,
+      [req.user.userId]
+    );
+    const userAccessCodes = clearanceResult.rows.map((r) => r.code as string);
+
+    const userCtx: UserAccessRuleContext = {
+      userId: req.user.userId,
+      roles: (ur.role_names as string[]) || [],
+      accessLevelCodes: userAccessCodes,
+      department: ur.department ?? null,
+      positionText: ur.position ?? null,
+      positionId: ur.position_id ?? null,
+      positionName: ur.position_name ?? null
+    };
+
+    const userDept = userCtx.department != null ? String(userCtx.department).trim() : '';
+    const userPosId = userCtx.positionId != null ? String(userCtx.positionId).trim() : '';
+    const userPosText = userCtx.positionText != null ? String(userCtx.positionText).trim() : '';
+
+    const unlockRes = await pool.query(
+      `SELECT material_id FROM material_users WHERE user_id = $1`,
+      [req.user.userId]
+    );
+    const unlocked = new Set(unlockRes.rows.map((r) => r.material_id as string));
 
     const documentationResult = await pool.query(
       `SELECT m.id, m.title, m.description, m.created_at,
         al.name as access_level_name,
         al.code as access_level_code,
-        al.priority as access_level_priority
+        al.priority as access_level_priority,
+        m.required_departments,
+        m.required_positions,
+        (
+          SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.sort_order), '[]'::json)
+          FROM (
+            SELECT mars.id, mars.role, mars.classification, mars."position" AS position,
+                   mars.department, mars.role_required, mars.classification_required,
+                   mars.position_required, mars.department_required, mars.sort_order,
+                   mars.responsible_user_id, mars.deadline, mars.access_password_hash
+            FROM material_access_rule_sets mars
+            WHERE mars.material_id = m.id
+          ) t
+        ) AS access_rule_sets
        FROM materials m
        LEFT JOIN access_levels al ON m.access_level_id = al.id
-       WHERE m.material_type = 'documentation'
-         AND m.status = 'published'
-         AND (
-           COALESCE(jsonb_array_length(COALESCE(m.required_departments::jsonb, '[]'::jsonb)), 0) = 0
-           OR (
-             length(trim($1::text)) > 0 AND EXISTS (
-               SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.required_departments::jsonb, '[]'::jsonb)) d
-               WHERE trim(d) = trim($1)
-             )
-           )
-         )
-         AND (
-           COALESCE(jsonb_array_length(COALESCE(m.required_positions::jsonb, '[]'::jsonb)), 0) = 0
-           OR (
-             length(trim($2::text)) > 0 AND EXISTS (
-               SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.required_positions::jsonb, '[]'::jsonb)) p
-               WHERE trim(p) = trim($2)
-             )
-           )
-           OR (
-             length(trim($3::text)) > 0 AND EXISTS (
-               SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.required_positions::jsonb, '[]'::jsonb)) p
-               WHERE trim(p) = trim($3)
-             )
-           )
-         )
-       ORDER BY m.order_num ASC NULLS LAST, m.created_at DESC`,
-      [userDept, userPosId, userPosText]
+       WHERE m.material_type = 'documentation' AND m.status = 'published'
+       ORDER BY m.order_num ASC NULLS LAST, m.created_at DESC`
     );
 
-    res.json(documentationResult.rows);
+    const out: Record<string, unknown>[] = [];
+    for (const row of documentationResult.rows) {
+      const levelCode = row.access_level_code as string;
+      if (!levelCode || levelCode === 'PUBLIC') {
+        out.push(stripDocumentationRuleSecrets(row as Record<string, unknown>));
+        continue;
+      }
+
+      let rules = row.access_rule_sets;
+      if (typeof rules === 'string') {
+        try {
+          rules = JSON.parse(rules);
+        } catch {
+          rules = [];
+        }
+      }
+      const ruleArr = Array.isArray(rules) ? (rules as AccessRuleSetRow[]) : [];
+      const hasUnlock = unlocked.has(row.id as string);
+
+      if (ruleArr.length === 0) {
+        if (
+          legacyDocumentationDepartmentsPositionsOk(
+            userDept,
+            userPosId,
+            userPosText,
+            row.required_departments,
+            row.required_positions
+          )
+        ) {
+          out.push(stripDocumentationRuleSecrets(row as Record<string, unknown>));
+        }
+        continue;
+      }
+
+      if (documentationVisibleForUser(userCtx, ruleArr, hasUnlock)) {
+        out.push(stripDocumentationRuleSecrets(row as Record<string, unknown>));
+      }
+    }
+
+    res.json(out);
   } catch (error) {
     console.error('Get documentation error:', error);
     res.status(500).json({ message: 'Внутренняя ошибка сервера' });

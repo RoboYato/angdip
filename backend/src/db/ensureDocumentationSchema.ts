@@ -57,6 +57,16 @@ export async function ensureDocumentationSchema(): Promise<void> {
   `);
 
   await safeQuery(`
+    ALTER TABLE material_access_rule_sets
+    ADD COLUMN IF NOT EXISTS deadline TIMESTAMPTZ
+  `);
+
+  await safeQuery(`
+    ALTER TABLE material_access_rule_sets
+    ADD COLUMN IF NOT EXISTS access_password_hash VARCHAR(255)
+  `);
+
+  await safeQuery(`
     ALTER TABLE materials ADD COLUMN IF NOT EXISTS password_expires_at TIMESTAMPTZ
   `);
 

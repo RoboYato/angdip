@@ -10,6 +10,7 @@ import {
 } from './accessRuleSets';
 
 const u: UserAccessRuleContext = {
+  userId: 'u1',
   roles: ['табельщик'],
   accessLevelCodes: ['CONFIDENTIAL'],
   positionText: null,
