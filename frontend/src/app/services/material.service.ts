@@ -41,6 +41,37 @@ export class MaterialService {
     return this.http.delete(`${this.apiUrl}/file/${fileId}`);
   }
 
+  /** Скачивание / открытие вложения (авторизация через cookie / заголовок, как у остальных API) */
+  getFileDownloadUrl(fileId: string): string {
+    return `${this.apiUrl}/files/${fileId}/download`;
+  }
+
+  /** Скачивание с JWT (интерцептор); для открытия во вкладке используйте blob URL. */
+  downloadMaterialFile(fileId: string): Observable<Blob> {
+    return this.http.get(`${this.apiUrl}/files/${fileId}/download`, { responseType: 'blob' });
+  }
+
+  /** Загрузка картинки для rich-text (ответ: { url: '/uploads/...' }) */
+  uploadImage(file: File): Observable<{ url: string }> {
+    const formData = new FormData();
+    formData.append('image', file);
+    return this.http.post<{ url: string }>(`${this.apiUrl}/upload-image`, formData);
+  }
+
+  /**
+   * URL для вставки в HTML редактора: при `ng serve` с proxy относительный /uploads/... уходит на бэкенд.
+   * Если фронт и API на разных origin без proxy — задайте полный базовый URL в окружении.
+   */
+  resolveEditorImageUrl(url: string): string {
+    if (!url) {
+      return url;
+    }
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    return url.startsWith('/') ? url : `/${url}`;
+  }
+
   addRoleToMaterial(materialId: string, roleId: string): Observable<any> {
     return this.http.post(`${this.apiUrl}/role/add`, { materialId, roleId });
   }

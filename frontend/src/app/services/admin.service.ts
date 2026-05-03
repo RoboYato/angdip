@@ -77,6 +77,11 @@ export class AdminService {
     return this.http.post(`${this.apiUrl}/users/${userId}/access-levels`, { levelId });
   }
 
+  /** Уникальные названия отделов (пользователи + материалы) для подсказок в формах */
+  getDepartments(): Observable<string[]> {
+    return this.http.get<string[]>(`${this.apiUrl}/departments`);
+  }
+
   getAuditLogs(materialId?: string, limit?: number, offset?: number, action?: string): Observable<any[]> {
     let url = `${this.apiUrl}/audit-logs`;
     const params = new URLSearchParams();

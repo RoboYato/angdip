@@ -2,7 +2,6 @@ import { Component, OnInit, AfterViewInit, ElementRef, ViewChild, NgZone } from 
 import { CommonModule } from '@angular/common';
 import { RouterModule, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { HttpClient } from '@angular/common/http';
 import { MaterialService } from '../../services/material.service';
 import { CourseService } from '../../services/course.service';
 import { AuthService } from '../../services/auth.service';
@@ -156,9 +155,12 @@ declare var Quill: any;
               <div *ngIf="currentMaterial.material_type === 'documentation' && currentMaterial.access_level_code !== 'PUBLIC'" class="form-row classified-fields">
                 <div class="form-group">
                   <label>Отдел (обязательно для документации с грифом) *</label>
-                  <input type="text" [(ngModel)]="deptInput" name="required_department"
-                         placeholder="Например: Бухгалтерия" required>
-                  <small class="hint-text">Введите отдел и нажмите +</small>
+                  <input type="text" [(ngModel)]="deptInput" name="required_department" list="deptSuggestions"
+                         placeholder="Например: Бухгалтерия" required autocomplete="off">
+                  <datalist id="deptSuggestions">
+                    <option *ngFor="let d of departmentsList" [value]="d"></option>
+                  </datalist>
+                  <small class="hint-text">Выберите из подсказок или введите новый отдел, затем «+ Добавить».</small>
                   <div class="tags-row">
                     <span *ngFor="let d of currentMaterial.required_departments" class="tag">
                       {{ d }} <button type="button" (click)="removeDept(d)">×</button>
@@ -201,6 +203,9 @@ declare var Quill: any;
               <!-- Пароль доступа — если задан, пользователь может разблокировать материал паролем -->
               <div class="form-group" *ngIf="currentMaterial.access_level_code !== 'PUBLIC'">
                 <label>🔑 Пароль доступа <span class="hint">(необязательно — позволяет пройти ABAC по паролю)</span></label>
+                <p class="hint-text warn" *ngIf="isPasswordDeadlineInPast()">
+                  Срок ознакомления уже в прошлом — разблокировка по паролю на бэкенде отключена, пока администратор не продлит дедлайн.
+                </p>
                 <input type="password" [(ngModel)]="currentMaterial.access_password" name="access_password"
                        placeholder="Оставьте пустым, чтобы не менять / убрать пароль">
                 <small class="hint-text">Если заполнено — пароль будет сохранён (перезапишет прежний). Пустое поле при редактировании — пароль не меняется.</small>
@@ -259,7 +264,7 @@ declare var Quill: any;
                 <div *ngIf="attachedFiles.length > 0" class="attached-files">
                   <p class="files-title">Прикреплённые файлы:</p>
                   <div *ngFor="let f of attachedFiles" class="file-item">
-                    📄 <a href="{{ f.file_path }}" target="_blank">{{ f.filename }}</a>
+                    📄 <a href="#" class="file-link" role="button" (click)="openAttachedFile(f, $event)">{{ f.filename }}</a>
                     ({{ formatFileSize(f.file_size) }})
                     <button type="button" class="btn-remove-file" (click)="deleteAttachedFile(f.id)">🗑️</button>
                   </div>
@@ -357,6 +362,8 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
   editorHtml: string = '';
   deptInput: string = '';
   posInput: string = '';
+  /** Подсказки отделов с сервера (GET /api/admin/departments) */
+  departmentsList: string[] = [];
 
   currentMaterial: any = {
     title: '',
@@ -379,7 +386,6 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
     private courseService: CourseService,
     private authService: AuthService,
     private adminService: AdminService,
-    private http: HttpClient,
     private ngZone: NgZone,
     private router: Router
   ) {}
@@ -388,8 +394,9 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
     this.loadCourses();
     this.loadMaterials();
     this.loadRoles();
-    this.loadPositions();  // 🟢 ДОБАВИТЬ
-    this.loadResponsibleUsers(); 
+    this.loadPositions();
+    this.loadDepartments();
+    this.loadResponsibleUsers();
   }
 
   ngAfterViewInit(): void {
@@ -429,17 +436,27 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
     }
   }
 
+  /** Дедлайн ознакомления в прошлом — пароль на бэкенде не принимается (см. unlockMaterial). */
+  isPasswordDeadlineInPast(): boolean {
+    if (!this.passwordExpiresInput) {
+      return false;
+    }
+    const t = new Date(this.passwordExpiresInput).getTime();
+    return !Number.isNaN(t) && t < Date.now();
+  }
+
   addAccessRuleSet(): void {
+    const cls = this.currentMaterial.access_level_code;
+    const classification = cls && cls !== 'PUBLIC' ? String(cls) : '';
+    const rid = (this.currentMaterial.responsible_user_id || '').toString().trim();
     this.accessRuleSets.push({
       role: '',
-      classification: this.currentMaterial.access_level_code && this.currentMaterial.access_level_code !== 'PUBLIC'
-        ? this.currentMaterial.access_level_code
-        : '',
+      classification,
       position: '',
       role_required: false,
-      classification_required: false,
+      classification_required: !!classification,
       position_required: false,
-      responsible_user_id: ''
+      responsible_user_id: rid
     });
   }
 
@@ -512,7 +529,10 @@ getResponsibleName(userId: string): string {
   }
 
   onEditorInput(): void {
-    // Синхронизируем HTML из contenteditable
+    const el = this.quillEditorRef?.nativeElement;
+    if (el) {
+      this.currentMaterial.content = el.innerHTML;
+    }
   }
 
   // ---- Image insertion ----
@@ -524,14 +544,14 @@ getResponsibleName(userId: string): string {
     const input = event.target as HTMLInputElement;
     if (!input.files || input.files.length === 0) return;
     const file = input.files[0];
-    const formData = new FormData();
-    formData.append('image', file);
-    this.http.post<{ url: string }>('/api/materials/upload-image', formData).subscribe({
+    this.materialService.uploadImage(file).subscribe({
       next: (res) => {
         const el = this.quillEditorRef?.nativeElement;
         if (el) {
           el.focus();
-          document.execCommand('insertImage', false, res.url);
+          const url = this.materialService.resolveEditorImageUrl(res.url);
+          document.execCommand('insertImage', false, url);
+          this.onEditorInput();
         }
         input.value = '';
       },
@@ -541,6 +561,37 @@ getResponsibleName(userId: string): string {
         input.value = '';
       }
     });
+  }
+
+  /** Открытие вложения: через API + JWT (blob), иначе прямой URL для старых записей без id. */
+  openAttachedFile(f: { id?: string; filename?: string; file_path?: string }, event: Event): void {
+    event.preventDefault();
+    if (!f?.id) {
+      window.open(this.resolveMediaUrl(f?.file_path || ''), '_blank', 'noopener,noreferrer');
+      return;
+    }
+    this.materialService.downloadMaterialFile(f.id).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank', 'noopener,noreferrer');
+        setTimeout(() => URL.revokeObjectURL(url), 120_000);
+      },
+      error: (err) => {
+        console.error('openAttachedFile', err);
+        alert('Не удалось открыть файл. Проверьте авторизацию и права доступа.');
+      }
+    });
+  }
+
+  resolveMediaUrl(u: string): string {
+    if (!u) {
+      return '#';
+    }
+    if (u.startsWith('http://') || u.startsWith('https://')) {
+      return u;
+    }
+    const p = u.startsWith('/') ? u : `/${u}`;
+    return `${window.location.origin}${p}`;
   }
 
   // ---- File attachment ----
@@ -621,6 +672,19 @@ loadPositions(): void {
     }
   });
 }
+
+  loadDepartments(): void {
+    this.adminService.getDepartments().subscribe({
+      next: (list) => {
+        this.departmentsList = Array.isArray(list) ? list : [];
+      },
+      error: (err) => {
+        console.error('Ошибка загрузки отделов:', err);
+        this.departmentsList = [];
+      }
+    });
+  }
+
 loadResponsibleUsers(): void {
   this.adminService.getUsers().subscribe({
     next: (users: any[]) => {
@@ -733,6 +797,9 @@ loadResponsibleUsers(): void {
     this.passwordExpiresInput = material.password_expires_at
       ? this.toDatetimeLocalValue(String(material.password_expires_at))
       : '';
+    if (this.isPasswordDeadlineInPast()) {
+      this.currentMaterial.access_password = '';
+    }
     this.editingMaterial = true;
     this.attachedFiles = material.files || [];
     this.pendingFiles = [];

@@ -23,6 +23,13 @@ router.get('/', authMiddleware, adminMiddleware, materialController.getAllMateri
 // Get documentation (must be before /:id route)
 router.get('/documentation', authMiddleware, materialController.getDocumentation);
 
+// Скачивание / просмотр вложения (до /:id, иначе «files» воспринимается как id)
+router.get(
+  '/files/:fileId/download',
+  authMiddleware,
+  materialController.downloadMaterialFile
+);
+
 // Get materials by course (with ABAC protection)
 router.get('/:id', authMiddleware, abacMiddleware, courseController.getMaterialById);
 router.post('/:id/unlock', authMiddleware, materialController.unlockMaterial);

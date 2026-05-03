@@ -10,6 +10,9 @@ import { getResponsibleDocumentationDashboard } from '../services/responsibleDas
 
 const router = Router();
 
+// Справочник отделов (для форм материалов, фильтров)
+router.get('/departments', authMiddleware, adminController.getDistinctDepartments);
+
 // Roles
 router.get('/roles', authMiddleware, adminController.getAllRoles);
 router.post('/roles', authMiddleware, adminMiddleware, adminController.createRole);

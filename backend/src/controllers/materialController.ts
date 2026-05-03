@@ -718,6 +718,89 @@ export async function deleteMaterial(req: AuthRequest, res: Response) {
   }
 }
 
+/** Дедлайн ознакомления / срок пароля — после этой даты пароль не принимается. */
+function isPasswordDeadlinePassed(passwordExpiresAt: unknown): boolean {
+  if (passwordExpiresAt == null || passwordExpiresAt === '') {
+    return false;
+  }
+  const t = new Date(passwordExpiresAt as string).getTime();
+  if (Number.isNaN(t)) {
+    return false;
+  }
+  return t < Date.now();
+}
+
+export async function downloadMaterialFile(req: AuthRequest, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { fileId } = req.params;
+    const fileRes = await pool.query(
+      `SELECT f.id, f.filename, f.file_path, f.mime_type, f.material_id,
+              m.course_id, m.material_type, m.status
+       FROM files f
+       INNER JOIN materials m ON m.id = f.material_id
+       WHERE f.id = $1`,
+      [fileId]
+    );
+    if (fileRes.rows.length === 0) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    const f = fileRes.rows[0] as Record<string, unknown>;
+    const uid = req.user.userId;
+    const isAdmin = !!req.user.isAdmin;
+
+    if (!isAdmin) {
+      if (f.status !== 'published') {
+        return res.status(403).json({ message: 'Forbidden' });
+      }
+      const { rows: allowed } = await pool.query(
+        `SELECT 1 FROM materials m WHERE m.id = $1 AND (
+          EXISTS (SELECT 1 FROM material_users mu WHERE mu.material_id = m.id AND mu.user_id = $2)
+          OR EXISTS (
+            SELECT 1 FROM course_users cu
+            WHERE cu.course_id = m.course_id AND cu.user_id = $2 AND m.course_id IS NOT NULL
+          )
+          OR EXISTS (
+            SELECT 1 FROM course_roles cr
+            JOIN user_roles ur ON ur.role_id = cr.role_id AND ur.user_id = $2
+            WHERE cr.course_id = m.course_id AND m.course_id IS NOT NULL
+          )
+          OR (m.material_type = 'documentation' AND m.status = 'published')
+        )`,
+        [f.material_id, uid]
+      );
+      if (allowed.length === 0) {
+        return res.status(403).json({ message: 'Forbidden' });
+      }
+    }
+
+    const fp = String(f.file_path || '').replace(/^[/\\]+/, '');
+    const abs = path.resolve(process.cwd(), fp);
+    const uploadsRoot = path.resolve(process.cwd(), 'uploads');
+    if (!abs.startsWith(uploadsRoot)) {
+      return res.status(400).json({ message: 'Invalid path' });
+    }
+    if (!fs.existsSync(abs)) {
+      return res.status(404).json({ message: 'File not found on disk' });
+    }
+
+    const mime = (f.mime_type as string) || 'application/octet-stream';
+    res.setHeader('Content-Type', mime);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename*=UTF-8''${encodeURIComponent(String(f.filename))}`
+    );
+    return res.sendFile(abs);
+  } catch (error) {
+    console.error('downloadMaterialFile:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+}
+
 export async function unlockMaterial(req: AuthRequest, res: Response) {
   try {
     if (!req.user) {
@@ -740,6 +823,14 @@ export async function unlockMaterial(req: AuthRequest, res: Response) {
 
     if (!material.access_password) {
       return res.status(403).json({ message: 'Доступ по паролю не настроен для данного материала' });
+    }
+
+    if (isPasswordDeadlinePassed(material.password_expires_at)) {
+      await logAction(req.user.userId, 'unlock_failed', id, { reason: 'password_expired' }, req.ip);
+      return res.status(403).json({
+        message: 'Срок действия доступа по паролю истёк. Обратитесь к администратору.',
+        code: 'password_expired'
+      });
     }
 
     const passwordMatch = await bcrypt.compare(password, material.access_password);

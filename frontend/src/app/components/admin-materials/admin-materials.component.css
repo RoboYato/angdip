@@ -483,3 +483,14 @@ h1 {
   font-size: 16px;
   line-height: 1;
 }
+
+.hint-text.warn {
+  color: #c0392b;
+  font-weight: 500;
+}
+
+a.file-link {
+  color: #2980b9;
+  cursor: pointer;
+  text-decoration: underline;
+}

@@ -1022,3 +1022,29 @@ export const updateUserPosition = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ success: false, message: 'Ошибка при обновлении должности пользователя' });
   }
 };
+
+/** Уникальные отделы из профилей пользователей и из материалов (required_departments JSONB). */
+export async function getDistinctDepartments(req: AuthRequest, res: Response) {
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT DISTINCT name FROM (
+        SELECT TRIM(u.department) AS name
+        FROM users u
+        WHERE u.department IS NOT NULL AND TRIM(u.department) <> ''
+        UNION
+        SELECT TRIM(elem) AS name
+        FROM materials m,
+        LATERAL jsonb_array_elements_text(COALESCE(m.required_departments, '[]'::jsonb)) AS elem
+        WHERE TRIM(elem) <> ''
+      ) t
+      WHERE name IS NOT NULL AND name <> ''
+      ORDER BY name ASC
+      `
+    );
+    res.json(rows.map((r) => (r as { name: string }).name));
+  } catch (error) {
+    console.error('getDistinctDepartments:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+}
