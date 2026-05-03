@@ -5,7 +5,7 @@ import { RouterModule } from '@angular/router';
 import { AdminService } from '../../services/admin.service';
 import { AuthService } from '../../services/auth.service';
 import { NotificationService } from '../../services/notification.service';
-import { openPrintableReport, buildResponsibleReportBody } from '../../utils/print-report';
+import { openPrintableReport, buildResponsibleReportBody, type PrintableReportKind } from '../../utils/print-report';
 
 type DocDashboard = {
   stats: {
@@ -196,7 +196,7 @@ type DocDashboard = {
           <div class="modal-header">
             <h3>Детальный прогресс: {{ selectedUserProgress?.fio || selectedUserProgress?.user_name }}</h3>
             <div class="modal-header-actions">
-              <button type="button" class="btn btn-sm btn-print" (click)="printResponsibleReport($event)">
+              <button type="button" class="btn btn-sm btn-print" (click)="printUserReport($event)">
                 🖨️ Распечатать отчёт
               </button>
               <button type="button" class="close-btn" (click)="closeModal()">×</button>
@@ -480,7 +480,8 @@ export class ResponsibleDashboardComponent implements OnInit {
     this.userMaterials = [];
   }
 
-  printResponsibleReport(ev?: Event): void {
+  /** Печать отчёта по выбранному в модалке пользователю (материалы под ответственностью текущего руководителя). */
+  printUserReport(ev?: Event): void {
     ev?.stopPropagation?.();
     const uid = this.selectedUserProgress?.user_id;
     if (!uid) {
@@ -490,13 +491,12 @@ export class ResponsibleDashboardComponent implements OnInit {
       next: (data) => {
         const body = buildResponsibleReportBody(data);
         const title = `Отчёт по сотруднику: ${data?.user?.fio || this.selectedUserProgress?.fio || ''}`;
-        openPrintableReport(title, title, body);
+        const kind: PrintableReportKind = 'responsible-user';
+        openPrintableReport(title, title, body, kind);
       },
       error: (e) => {
         console.error(e);
-        alert(
-          'Не удалось сформировать отчёт. Убедитесь, что у сотрудника есть материалы в зоне вашей ответственности.'
-        );
+        alert('Не удалось загрузить данные отчёта. Проверьте сеть и авторизацию.');
       }
     });
   }

@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { AdminService } from '../../services/admin.service';
-import { openPrintableReport, buildOverallAdminReportBody } from '../../utils/print-report';
+import { openPrintableReport, buildOverallAdminReportBody, type PrintableReportKind } from '../../utils/print-report';
 
 @Component({
   selector: 'app-admin-progress',
@@ -69,6 +69,12 @@ import { openPrintableReport, buildOverallAdminReportBody } from '../../utils/pr
       </div>
 
       <div class="progress-table-section">
+        <div class="report-toolbar no-print">
+          <span class="report-toolbar-label">Печать сводки по всей системе:</span>
+          <button type="button" class="btn btn-print-report" (click)="printOverallReport()" [disabled]="overallReportLoading">
+            {{ overallReportLoading ? 'Загрузка…' : '📄 Сформировать общий отчёт' }}
+          </button>
+        </div>
         <h3>Детальный прогресс</h3>
         <div class="table-container">
           <table class="table" *ngIf="userProgress.length > 0">
@@ -224,6 +230,24 @@ import { openPrintableReport, buildOverallAdminReportBody } from '../../utils/pr
       max-width: 220px;
       font-size: 12px;
       word-break: break-word;
+    }
+
+    .report-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      background: #e8f5e9;
+      border: 1px solid #a5d6a7;
+      border-radius: 8px;
+    }
+
+    .report-toolbar-label {
+      font-size: 14px;
+      color: #1b5e20;
+      font-weight: 500;
     }
 
     .breadcrumb a {
@@ -642,7 +666,8 @@ export class AdminProgressComponent implements OnInit {
         this.overallReportLoading = false;
         const body = buildOverallAdminReportBody(data);
         const title = 'Сводный отчёт по прогрессу пользователей';
-        openPrintableReport(title, title, body);
+        const kind: PrintableReportKind = 'overall-admin';
+        openPrintableReport(title, title, body, kind);
       },
       error: (err) => {
         this.overallReportLoading = false;

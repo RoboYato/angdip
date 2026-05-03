@@ -27,19 +27,31 @@ const printStyles = `
   }
 `;
 
+/** Тип отчёта (для подписи в шапке печати / отладки). */
+export type PrintableReportKind = 'overall-admin' | 'responsible-user' | 'generic';
+
 /** Открывает новое окно с HTML и вызывает диалог печати. */
-export function openPrintableReport(pageTitle: string, documentTitle: string, innerBodyHtml: string): void {
+export function openPrintableReport(
+  pageTitle: string,
+  documentTitle: string,
+  innerBodyHtml: string,
+  reportKind: PrintableReportKind = 'generic'
+): void {
   const w = window.open('', '_blank');
   if (!w) {
     alert('Не удалось открыть окно печати. Разрешите всплывающие окна для этого сайта.');
     return;
   }
   const meta = `Сформировано: ${new Date().toLocaleString('ru-RU')}`;
+  const kindLine =
+    reportKind !== 'generic'
+      ? ` · Тип: ${reportKind === 'overall-admin' ? 'сводный (админ)' : 'по сотруднику (ответственный)'}`
+      : '';
   w.document.open();
   w.document.write(`<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><title>${escapeHtml(pageTitle)}</title>`);
   w.document.write(`<style>${printStyles}</style></head><body>`);
   w.document.write(`<h1>${escapeHtml(documentTitle)}</h1>`);
-  w.document.write(`<div class="meta">${escapeHtml(meta)}</div>`);
+  w.document.write(`<div class="meta">${escapeHtml(meta)}${escapeHtml(kindLine)}</div>`);
   w.document.write(innerBodyHtml);
   w.document.write(
     `<p class="no-print" style="margin-top:20px"><button type="button" onclick="window.print()">Печать / PDF</button></p>`

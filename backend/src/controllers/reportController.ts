@@ -60,26 +60,7 @@ export async function getResponsibleUserReport(req: AuthRequest, res: Response) 
     }
     const user = userRes.rows[0] as Record<string, unknown>;
 
-    const overlap = await pool.query(
-      `SELECT COUNT(*)::int AS n
-       FROM materials m
-       WHERE m.status = 'published'
-         AND (${responsibleMaterialsCondition('$2')})
-         AND (
-           EXISTS (SELECT 1 FROM material_assignments ma WHERE ma.material_id = m.id AND ma.user_id = $1::uuid)
-           OR EXISTS (SELECT 1 FROM material_completions mc WHERE mc.material_id = m.id AND mc.user_id = $1::uuid)
-           OR (m.course_id IS NOT NULL AND EXISTS (
-             SELECT 1 FROM course_users cu WHERE cu.user_id = $1::uuid AND cu.course_id = m.course_id
-           ))
-         )`,
-      [userId, responsibleId]
-    );
-    if ((overlap.rows[0] as { n: number }).n < 1) {
-      return res.status(403).json({
-        message: 'Нет данных по этому сотруднику в зоне вашей ответственности'
-      });
-    }
-
+    /** Без 403: при отсутствии пересечения возвращаем сотрудника и пустой список материалов (для печати). */
     const matRes = await pool.query(
       `
       SELECT DISTINCT ON (m.id)
