@@ -208,21 +208,29 @@ export async function getAllUsers(req: AuthRequest, res: Response) {
     }
 
     const usersResult = await pool.query(`
-      SELECT 
-        u.id, u.fio, u.login, u.email, u.position, u.department, 
-        u.is_admin, u.is_active, u.is_deleted, u.created_at,
-        u.position_id, p.name as position_name, p.importance as position_importance,
-        COALESCE(
-          (SELECT json_agg(json_build_object('id', al.id, 'name', al.name, 'code', al.code))
-           FROM user_access_levels ual
-           JOIN access_levels al ON al.id = ual.access_level_id
-           WHERE ual.user_id = u.id),
-          '[]'::json
-        ) as access_levels
-      FROM users u
-      LEFT JOIN positions p ON p.id = u.position_id
-      WHERE u.is_deleted = false
-      ORDER BY u.created_at DESC
+     SELECT 
+  u.*,
+  COALESCE(
+    (SELECT json_agg(json_build_object('id', al.id, 'code', al.code, 'name', al.name))
+     FROM user_access_levels ual
+     JOIN access_levels al ON al.id = ual.access_level_id
+     WHERE ual.user_id = u.id
+    ), '[]'::json
+  ) as access_levels,
+  -- также нужно сохранить остальные поля, которые уже были (например, position_name, position_importance, roles и т.д.)
+  p.name as position_name,
+  p.importance as position_importance,
+  COALESCE(
+    (SELECT json_agg(json_build_object('id', r.id, 'name', r.name, 'description', r.description, 'created_at', r.created_at, 'updated_at', r.updated_at))
+     FROM user_roles ur
+     JOIN roles r ON r.id = ur.role_id
+     WHERE ur.user_id = u.id
+    ), '[]'::json
+  ) as roles
+FROM users u
+LEFT JOIN positions p ON u.position_id = p.id
+WHERE u.is_deleted = false
+ORDER BY u.created_at DESC;
     `);
 
     const usersWithRoles = await Promise.all(
