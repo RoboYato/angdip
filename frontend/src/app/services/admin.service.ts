@@ -223,4 +223,14 @@ getResponsibleProgress(): Observable<any[]> {
   getResponsibleDocumentationDashboard(): Observable<any> {
     return this.http.get(`${this.apiUrl}/responsible-documentation-dashboard`);
   }
+
+  /** Данные для печатного отчёта по сотруднику (материалы под ответственностью текущего пользователя). */
+  getResponsibleReportForUser(userId: string): Observable<any> {
+    return this.http.get<any>(`/api/responsible/report/user/${userId}`);
+  }
+
+  /** Сводный отчёт по прогрессу всех пользователей (только админ). */
+  getOverallAdminReport(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/reports/overall`);
+  }
 }

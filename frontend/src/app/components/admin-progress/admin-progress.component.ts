@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { AdminService } from '../../services/admin.service';
+import { openPrintableReport, buildOverallAdminReportBody } from '../../utils/print-report';
 
 @Component({
   selector: 'app-admin-progress',
@@ -14,7 +15,12 @@ import { AdminService } from '../../services/admin.service';
         <a routerLink="/admin">← Панель управления</a>
       </div>
       
-      <h2>Отслеживание прогресса пользователей</h2>
+      <div class="page-title-row">
+        <h2>Отслеживание прогресса пользователей</h2>
+        <button type="button" class="btn btn-print-report" (click)="printOverallReport()" [disabled]="overallReportLoading">
+          {{ overallReportLoading ? '…' : '📄 Сформировать общий отчёт' }}
+        </button>
+      </div>
 
       <div class="filters-section">
         <div class="filter-group">
@@ -32,6 +38,14 @@ import { AdminService } from '../../services/admin.service';
             <option value="completed">Завершен</option>
             <option value="new">Не начат</option>
           </select>
+        </div>
+        <div class="filter-group">
+          <label for="deptFilter">Отдел (подстрока):</label>
+          <input id="deptFilter" type="text" [(ngModel)]="filterDepartment" (ngModelChange)="filterProgress()" placeholder="Напр. бухгалтерия">
+        </div>
+        <div class="filter-group">
+          <label for="roleFilter">Роль (подстрока):</label>
+          <input id="roleFilter" type="text" [(ngModel)]="filterRole" (ngModelChange)="filterProgress()" placeholder="Напр. student">
         </div>
       </div>
 
@@ -61,6 +75,8 @@ import { AdminService } from '../../services/admin.service';
             <thead>
               <tr>
                 <th>Пользователь</th>
+                <th>Отдел</th>
+                <th>Роли</th>
                 <th>Курс</th>
                 <th>Прогресс</th>
                 <th>Статус</th>
@@ -71,6 +87,8 @@ import { AdminService } from '../../services/admin.service';
             <tbody>
               <tr *ngFor="let progress of filteredProgress">
                 <td>{{ progress.user_name }}</td>
+                <td>{{ progress.department || '—' }}</td>
+                <td class="roles-cell">{{ progress.roles || '—' }}</td>
                 <td>{{ progress.course_title }}</td>
                 <td>
                   <div class="progress-container">
@@ -172,6 +190,40 @@ import { AdminService } from '../../services/admin.service';
     h2, h3 {
       color: #333;
       margin-top: 0;
+    }
+
+    .page-title-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .btn-print-report {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      background: #2e7d32;
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .btn-print-report:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .btn-print-report:hover:not(:disabled) {
+      background: #1b5e20;
+    }
+
+    .roles-cell {
+      max-width: 220px;
+      font-size: 12px;
+      word-break: break-word;
     }
 
     .breadcrumb a {
@@ -513,6 +565,9 @@ export class AdminProgressComponent implements OnInit {
   courses: any[] = [];
   selectedCourse = '';
   selectedStatus = '';
+  filterDepartment = '';
+  filterRole = '';
+  overallReportLoading = false;
   totalEnrollments = 0;
   completedCount = 0;
   averageProgress = 0;
@@ -545,8 +600,7 @@ export class AdminProgressComponent implements OnInit {
     this.adminService.getUserProgress().subscribe({
       next: (data) => {
         this.userProgress = data;
-        this.filteredProgress = data;
-        this.calculateStats();
+        this.filterProgress();
       },
       error: (error) => {
         console.error('Error loading user progress:', error);
@@ -555,22 +609,47 @@ export class AdminProgressComponent implements OnInit {
   }
 
   filterProgress() {
-    this.filteredProgress = this.userProgress.filter(progress => {
+    const fd = (this.filterDepartment || '').trim().toLowerCase();
+    const fr = (this.filterRole || '').trim().toLowerCase();
+    this.filteredProgress = this.userProgress.filter((progress) => {
       const courseMatch = !this.selectedCourse || progress.course_id === this.selectedCourse;
       const statusMatch = !this.selectedStatus || progress.status === this.selectedStatus;
-      return courseMatch && statusMatch;
+      const deptMatch =
+        !fd || String(progress.department || '').toLowerCase().includes(fd);
+      const roleMatch =
+        !fr || String(progress.roles || '').toLowerCase().includes(fr);
+      return courseMatch && statusMatch && deptMatch && roleMatch;
     });
+    this.calculateStats();
   }
 
   calculateStats() {
-    this.totalEnrollments = this.userProgress.length;
-    this.completedCount = this.userProgress.filter(p => p.status === 'completed').length;
-    
-    const totalProgress = this.userProgress.reduce((sum, p) => sum + (p.progress_percent || 0), 0);
+    const src = this.filteredProgress;
+    this.totalEnrollments = src.length;
+    this.completedCount = src.filter((p) => p.status === 'completed').length;
+
+    const totalProgress = src.reduce((sum, p) => sum + (Number(p.progress_percent) || 0), 0);
     this.averageProgress = this.totalEnrollments > 0 ? Math.round(totalProgress / this.totalEnrollments) : 0;
-    
-    const uniqueUsers = new Set(this.userProgress.map(p => p.user_id));
+
+    const uniqueUsers = new Set(src.map((p) => p.user_id));
     this.activeUsersCount = uniqueUsers.size;
+  }
+
+  printOverallReport(): void {
+    this.overallReportLoading = true;
+    this.adminService.getOverallAdminReport().subscribe({
+      next: (data) => {
+        this.overallReportLoading = false;
+        const body = buildOverallAdminReportBody(data);
+        const title = 'Сводный отчёт по прогрессу пользователей';
+        openPrintableReport(title, title, body);
+      },
+      error: (err) => {
+        this.overallReportLoading = false;
+        console.error(err);
+        alert('Не удалось получить сводный отчёт (нужны права администратора).');
+      }
+    });
   }
 
   getStatusText(status: string): string {

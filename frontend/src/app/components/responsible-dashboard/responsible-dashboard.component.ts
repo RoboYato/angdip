@@ -5,6 +5,7 @@ import { RouterModule } from '@angular/router';
 import { AdminService } from '../../services/admin.service';
 import { AuthService } from '../../services/auth.service';
 import { NotificationService } from '../../services/notification.service';
+import { openPrintableReport, buildResponsibleReportBody } from '../../utils/print-report';
 
 type DocDashboard = {
   stats: {
@@ -194,7 +195,12 @@ type DocDashboard = {
         <div class="modal-content" (click)="$event.stopPropagation()">
           <div class="modal-header">
             <h3>Детальный прогресс: {{ selectedUserProgress?.fio || selectedUserProgress?.user_name }}</h3>
-            <button type="button" class="close-btn" (click)="closeModal()">×</button>
+            <div class="modal-header-actions">
+              <button type="button" class="btn btn-sm btn-print" (click)="printResponsibleReport($event)">
+                🖨️ Распечатать отчёт
+              </button>
+              <button type="button" class="close-btn" (click)="closeModal()">×</button>
+            </div>
           </div>
 
           <div class="modal-body">
@@ -272,8 +278,11 @@ type DocDashboard = {
     .no-data.inline { padding: 16px; }
     .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
     .modal-content { background: white; border-radius: 8px; width: 90%; max-width: 600px; max-height: 80vh; overflow-y: auto; }
-    .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px; border-bottom: 1px solid #eee; }
-    .modal-header h3 { margin: 0; color: #333; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 20px; border-bottom: 1px solid #eee; }
+    .modal-header h3 { margin: 0; color: #333; flex: 1; min-width: 0; }
+    .modal-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .btn-print { background: #6c757d; color: #fff; border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+    .btn-print:hover { background: #5a6268; }
     .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #999; }
     .close-btn:hover { color: #333; }
     .modal-body { padding: 20px; }
@@ -469,5 +478,26 @@ export class ResponsibleDashboardComponent implements OnInit {
     this.showModal = false;
     this.selectedUserProgress = null;
     this.userMaterials = [];
+  }
+
+  printResponsibleReport(ev?: Event): void {
+    ev?.stopPropagation?.();
+    const uid = this.selectedUserProgress?.user_id;
+    if (!uid) {
+      return;
+    }
+    this.adminService.getResponsibleReportForUser(uid).subscribe({
+      next: (data) => {
+        const body = buildResponsibleReportBody(data);
+        const title = `Отчёт по сотруднику: ${data?.user?.fio || this.selectedUserProgress?.fio || ''}`;
+        openPrintableReport(title, title, body);
+      },
+      error: (e) => {
+        console.error(e);
+        alert(
+          'Не удалось сформировать отчёт. Убедитесь, что у сотрудника есть материалы в зоне вашей ответственности.'
+        );
+      }
+    });
   }
 }

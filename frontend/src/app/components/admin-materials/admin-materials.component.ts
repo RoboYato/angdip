@@ -22,7 +22,7 @@ declare var Quill: any;
           <li><a routerLink="/admin/courses" routerLinkActive="active">📚 Курсы</a></li>
           <li><a routerLink="/admin/materials" routerLinkActive="active">📄 Материалы и документация</a></li>
           <li><a routerLink="/admin/users" routerLinkActive="active">👥 Пользователи</a></li>
-          <li><a routerLink="/admin/progress" routerLinkActive="active">📈 Прогресс обучения</a></li>
+          <li><a routerLink="/admin/progress" routerLinkActive="active">📊 Прогресс пользователей</a></li>
           <li><a routerLink="/admin/audit" routerLinkActive="active">🧾 Журнал аудита</a></li>
           <li class="logout"><a (click)="logout()">🚪 Выход</a></li>
         </ul>

@@ -21,7 +21,7 @@ import { AuthService } from '../../services/auth.service';
           <li><a routerLink="/admin/users" routerLinkActive="active">Пользователи</a></li>
           <li><a routerLink="/admin/roles" routerLinkActive="active">Роли</a></li>
           <li><a routerLink="/admin/access-levels" routerLinkActive="active">Уровни доступа</a></li>
-          <li><a routerLink="/admin/progress" routerLinkActive="active">Прогресс пользователей</a></li>
+          <li><a routerLink="/admin/progress" routerLinkActive="active">📊 Прогресс пользователей</a></li>
           <li><a routerLink="/admin/audit" routerLinkActive="active">Журнал аудита</a></li>
           <li class="logout"><a (click)="logout()">Выход</a></li>
         </ul>

@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { processDocumentationReminders } from '../services/notificationService';
 import { SQL_COURSE_WHERE_USER_IS_RESPONSIBLE } from '../utils/responsibleCourses';
 import { getResponsibleDocumentationDashboard } from '../services/responsibleDashboardService';
+import * as reportController from '../controllers/reportController';
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.delete('/user-roles/:userId/:roleId', authMiddleware, adminMiddleware, ad
 
 // Progress tracking
 router.get('/user-progress', authMiddleware, adminMiddleware, adminController.getUserProgress);
+router.get('/reports/overall', authMiddleware, adminMiddleware, reportController.getOverallAdminReport);
 //router.get('/user-progress/:userId/:courseId/materials', authMiddleware, adminMiddleware, adminController.getUserMaterials);
 router.get('/user-progress/:userId/:courseId/test-attempts', authMiddleware, adminMiddleware, getUserTestAttempts);
 router.get('/courses', authMiddleware, adminMiddleware, adminController.getAdminCourses);

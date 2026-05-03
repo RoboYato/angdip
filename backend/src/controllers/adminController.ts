@@ -475,6 +475,11 @@ export async function getUserProgress(req: AuthRequest, res: Response) {
         u.login as user_login,
         u.position,
         u.department,
+        COALESCE(
+          (SELECT string_agg(r.name, ', ' ORDER BY r.name)
+           FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = u.id),
+          ''
+        ) AS roles,
         c.title as course_title,
         CASE 
           WHEN up.total_materials > 0 THEN 

@@ -11,6 +11,7 @@ import materialRoutes from './routes/materials';
 import testRoutes from './routes/tests';
 import adminRoutes from './routes/admin';
 import notificationsRoutes from './routes/notifications';
+import responsibleRoutes from './routes/responsible';
 import cron from 'node-cron';
 import { processDocumentationReminders } from './services/notificationService';
 
@@ -44,6 +45,7 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/materials', materialRoutes);
 app.use('/api/tests', testRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/responsible', responsibleRoutes);
 app.use('/api/notifications', notificationsRoutes);
 
 // Health check
