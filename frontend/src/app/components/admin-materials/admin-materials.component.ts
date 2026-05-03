@@ -53,7 +53,7 @@ declare var Quill: any;
                 </div>
 
                 <div class="form-group">
-                  <label>Курс {{ currentMaterial.material_type === 'learning' ? '*' : '(опционально)' }}</label>
+                  <label>Курс{{ currentMaterial.material_type === 'learning' ? ' *' : '' }}</label>
                   <select [(ngModel)]="currentMaterial.course_id" name="course_id"
                           [required]="currentMaterial.material_type === 'learning'">
                     <option value="">Выберите курс</option>
@@ -66,11 +66,7 @@ declare var Quill: any;
                 <div class="form-group">
                   <label>Гриф (уровень доступа)</label>
                   <select [(ngModel)]="currentMaterial.access_level_code" name="access_level" (change)="onAccessLevelChange()">
-                    <option value="PUBLIC">🌐 Публичный</option>
-                    <option value="INTERNAL">🏢 Внутренний</option>
-                    <option value="CONFIDENTIAL">🔒 Конфиденциально</option>
-                    <option value="SECRET">🔐 Секретно</option>
-                    <option value="TOP_SECRET">🛡️ Совершенно секретно</option>
+                    <option *ngFor="let lv of accessLevelsList" [value]="lv.code">{{ lv.name }}</option>
                   </select>
                 </div>
 
@@ -96,6 +92,8 @@ declare var Quill: any;
                     <tr>
                       <th>Роль</th>
                       <th>Проверять роль</th>
+                      <th>Отдел</th>
+                      <th>Проверять отдел</th>
                       <th>Гриф</th>
                       <th>Проверять гриф</th>
                       <th>Должность</th>
@@ -116,13 +114,18 @@ declare var Quill: any;
                         <input type="checkbox" [(ngModel)]="row.role_required" [name]="'ars_rr_' + i">
                       </td>
                       <td>
+                        <select [(ngModel)]="row.department" [name]="'ars_dept_' + i" class="form-control compact-select">
+                          <option value="">—</option>
+                          <option *ngFor="let d of departmentsList" [value]="d">{{ d }}</option>
+                        </select>
+                      </td>
+                      <td class="cell-center">
+                        <input type="checkbox" [(ngModel)]="row.department_required" [name]="'ars_dr_' + i">
+                      </td>
+                      <td>
                         <select [(ngModel)]="row.classification" [name]="'ars_cl_' + i" class="form-control compact-select">
                           <option value="">—</option>
-                          <option value="PUBLIC">Публичный</option>
-                          <option value="INTERNAL">Внутренний</option>
-                          <option value="CONFIDENTIAL">Конфиденциально</option>
-                          <option value="SECRET">Секретно</option>
-                          <option value="TOP_SECRET">Совершенно секретно</option>
+                          <option *ngFor="let lv of accessLevelsList" [value]="lv.code">{{ lv.name }}</option>
                         </select>
                       </td>
                       <td class="cell-center">
@@ -156,7 +159,7 @@ declare var Quill: any;
                 <div class="form-group">
                   <label>Отдел (обязательно для документации с грифом) *</label>
                   <input type="text" [(ngModel)]="deptInput" name="required_department" list="deptSuggestions"
-                         placeholder="Например: Бухгалтерия" required autocomplete="off">
+                         required autocomplete="off">
                   <datalist id="deptSuggestions">
                     <option *ngFor="let d of departmentsList" [value]="d"></option>
                   </datalist>
@@ -171,7 +174,7 @@ declare var Quill: any;
                 <div class="form-group">
                   <label>Должность (обязательно для документации с грифом) *</label>
                   <select class="form-control" (change)="onPositionSelect($event)">
-                    <option [value]="null">— Выберите должность —</option>
+                    <option value="">— Выберите должность —</option>
                     <option *ngFor="let position of positionsList" [value]="position.id">
                       {{ position.name }} (важность: {{ position.importance }})
                     </option>
@@ -184,22 +187,24 @@ declare var Quill: any;
                   </div>
                   <small class="hint-text">Выберите должность из списка и нажмите +</small>
                 </div>
-                <div class="form-group" *ngIf="currentMaterial.material_type === 'documentation'">
+              </div>
+              <div *ngIf="currentMaterial.material_type === 'documentation'" class="form-row classified-fields">
+                <div class="form-group">
                   <label>Ответственный за материал (общий) *</label>
                   <select [(ngModel)]="currentMaterial.responsible_user_id" name="responsible_user_id" class="form-control" required>
-                    <option [value]="null">— Выберите ответственного —</option>
+                    <option value="">— Выберите ответственного —</option>
                     <option *ngFor="let user of usersList" [value]="user.id">
                       {{ user.fio }} ({{ user.position || 'без должности' }})
                     </option>
                   </select>
                   <small class="hint-text">Используется для наборов правил без своего ответственного и для напоминаний.</small>
                 </div>
-                <div class="form-group" *ngIf="currentMaterial.material_type === 'documentation'">
+                <div class="form-group">
                   <label>Срок ознакомления (дедлайн)</label>
                   <input type="datetime-local" [(ngModel)]="passwordExpiresInput" name="password_expires_at" class="form-control">
                   <small class="hint-text">До этой даты сотрудники должны открыть документ; по графику ответственному приходят напоминания.</small>
                 </div>
-</div>
+              </div>
               <!-- Пароль доступа — если задан, пользователь может разблокировать материал паролем -->
               <div class="form-group" *ngIf="currentMaterial.access_level_code !== 'PUBLIC'">
                 <label>🔑 Пароль доступа <span class="hint">(необязательно — позволяет пройти ABAC по паролю)</span></label>
@@ -234,12 +239,14 @@ declare var Quill: any;
                   </select>
                   <input type="color" class="tb-color" (change)="execColor($event)" title="Цвет текста">
                   <button type="button" class="tb-btn" (click)="insertImage()" title="Вставить картинку">🖼️</button>
+                  <button type="button" class="tb-btn" (click)="resizeImageFromToolbar()" title="Размер выделенной картинки">📐</button>
                   <input #imageFileInput type="file" accept="image/*" style="display:none" (change)="onImageFileSelected($event)">
                 </div>
                 <div #quillEditor
                      class="rich-editor"
                      contenteditable="true"
                      (input)="onEditorInput()"
+                     (dblclick)="onEditorDblClick($event)"
                      [innerHTML]="editorHtml"></div>
               </div>
 
@@ -346,13 +353,16 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
   usersList: any[] = [];        // 🟢 ДОБАВИТЬ ЗДЕСЬ (список пользователей-руководителей)
   courses: any[] = [];
   roles: any[] = [];
+  accessLevelsList: any[] = [];
   accessRuleSets: Array<{
     role: string;
     classification: string;
     position: string;
+    department: string;
     role_required: boolean;
     classification_required: boolean;
     position_required: boolean;
+    department_required: boolean;
     responsible_user_id: string;
   }> = [];
   passwordExpiresInput = '';
@@ -375,7 +385,7 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
     status: 'draft',
     required_departments: [],
     required_positions: [],
-     responsible_user_id: null as string | null,
+     responsible_user_id: '' as string,
      responsible_leader: null as string | null
   };
 
@@ -394,6 +404,7 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
     this.loadCourses();
     this.loadMaterials();
     this.loadRoles();
+    this.loadAccessLevels();
     this.loadPositions();
     this.loadDepartments();
     this.loadResponsibleUsers();
@@ -412,14 +423,11 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
   }
 
   getAccessLevelLabel(code: string): string {
-    const labels: Record<string, string> = {
-      PUBLIC: 'Публичный',
-      INTERNAL: 'Внутренний',
-      CONFIDENTIAL: 'Конфиденциально',
-      SECRET: 'Секретно',
-      TOP_SECRET: 'Совершенно секретно'
-    };
-    return labels[code || ''] || code || 'Публичный';
+    const row = this.accessLevelsList?.find((a: any) => a.code === code);
+    if (row?.name) {
+      return row.name;
+    }
+    return code || 'Публичный';
   }
 
   
@@ -448,15 +456,17 @@ export class AdminMaterialsComponent implements OnInit, AfterViewInit {
   addAccessRuleSet(): void {
     const cls = this.currentMaterial.access_level_code;
     const classification = cls && cls !== 'PUBLIC' ? String(cls) : '';
-    const rid = (this.currentMaterial.responsible_user_id || '').toString().trim();
+    const rid = this.normalizeUserIdString(this.currentMaterial.responsible_user_id);
     this.accessRuleSets.push({
       role: '',
       classification,
       position: '',
+      department: '',
       role_required: false,
       classification_required: !!classification,
       position_required: false,
-      responsible_user_id: rid
+      department_required: false,
+      responsible_user_id: rid || ''
     });
   }
 
@@ -495,7 +505,7 @@ onPositionSelect(event: any): void {
     this.currentMaterial.required_positions = [...this.currentMaterial.required_positions, positionId];
   }
   // Сбросить select
-  event.target.value = null;
+  event.target.value = '';
 }
 removePos(p: string): void {
   this.currentMaterial.required_positions = this.currentMaterial.required_positions.filter((x: string) => x !== p);
@@ -538,6 +548,73 @@ getResponsibleName(userId: string): string {
   // ---- Image insertion ----
   insertImage(): void {
     this.imageFileInputRef?.nativeElement.click();
+  }
+
+  private normalizeUserIdString(v: unknown): string | null {
+    const s = v == null ? '' : String(v).trim();
+    if (!s || s.toLowerCase() === 'null') {
+      return null;
+    }
+    return s;
+  }
+
+  /** Двойной клик по картинке в редакторе — задать ширину/высоту. */
+  onEditorDblClick(ev: MouseEvent): void {
+    const t = ev.target as HTMLElement;
+    if (t?.tagName !== 'IMG') {
+      return;
+    }
+    ev.preventDefault();
+    this.openImageSizeDialog(t as HTMLImageElement);
+  }
+
+  resizeImageFromToolbar(): void {
+    const el = this.quillEditorRef?.nativeElement as HTMLElement | undefined;
+    if (!el) {
+      return;
+    }
+    const sel = window.getSelection();
+    let node: Node | null = sel?.anchorNode ?? null;
+    if (node?.nodeType === Node.TEXT_NODE) {
+      node = (node as Text).parentElement;
+    }
+    let cur: HTMLElement | null = node as HTMLElement | null;
+    while (cur && cur !== el) {
+      if (cur.tagName === 'IMG') {
+        this.openImageSizeDialog(cur as HTMLImageElement);
+        return;
+      }
+      cur = cur.parentElement;
+    }
+    alert('Выделите изображение в тексте или дважды щёлкните по нему.');
+  }
+
+  private openImageSizeDialog(img: HTMLImageElement): void {
+    const defW = img.style.width || img.getAttribute('width') || '';
+    const defH = img.style.height || img.getAttribute('height') || '';
+    const w = window.prompt('Ширина (например 400px, 50% или пусто для авто):', defW);
+    if (w === null) {
+      return;
+    }
+    const h = window.prompt('Высота (пусто для авто):', defH);
+    if (h === null) {
+      return;
+    }
+    if (w.trim()) {
+      img.style.width = w.trim();
+      img.removeAttribute('width');
+    } else {
+      img.style.width = '';
+      img.removeAttribute('width');
+    }
+    if (h.trim()) {
+      img.style.height = h.trim();
+      img.removeAttribute('height');
+    } else {
+      img.style.height = '';
+      img.removeAttribute('height');
+    }
+    this.onEditorInput();
   }
 
   onImageFileSelected(event: Event): void {
@@ -644,6 +721,25 @@ getResponsibleName(userId: string): string {
     });
   }
 
+  loadAccessLevels(): void {
+    const fallback = [
+      { code: 'PUBLIC', name: 'Публичный' },
+      { code: 'INTERNAL', name: 'Внутренний' },
+      { code: 'CONFIDENTIAL', name: 'Конфиденциально' },
+      { code: 'SECRET', name: 'Секретно' },
+      { code: 'TOP_SECRET', name: 'Совершенно секретно' }
+    ];
+    this.adminService.getAccessLevels().subscribe({
+      next: (rows: any[]) => {
+        this.accessLevelsList = Array.isArray(rows) && rows.length > 0 ? rows : fallback;
+      },
+      error: (err) => {
+        console.error('Ошибка загрузки грифов:', err);
+        this.accessLevelsList = fallback;
+      }
+    });
+  }
+
   loadCourses(): void {
     this.courseService.getCourses().subscribe({
       next: (courses) => { this.courses = courses; },
@@ -708,7 +804,10 @@ loadResponsibleUsers(): void {
 
   saveMaterial(): void {
     if (this.currentMaterial.material_type === 'documentation') {
-      if (!this.currentMaterial.responsible_user_id && !this.currentMaterial.responsible_leader) {
+      if (
+        !this.normalizeUserIdString(this.currentMaterial.responsible_user_id) &&
+        !this.normalizeUserIdString(this.currentMaterial.responsible_leader)
+      ) {
         alert('Для документации необходимо выбрать ответственного за материал!');
         return;
       }
@@ -727,17 +826,19 @@ loadResponsibleUsers(): void {
       role: row.role?.trim() || null,
       classification: row.classification?.trim() || null,
       position: row.position?.trim() || null,
+      department: row.department?.trim() || null,
       role_required: !!row.role_required,
       classification_required: !!row.classification_required,
       position_required: !!row.position_required,
-      responsible_user_id: row.responsible_user_id?.trim() || null
+      department_required: !!row.department_required,
+      responsible_user_id: this.normalizeUserIdString(row.responsible_user_id)
     }));
-    const rid = this.currentMaterial.responsible_user_id || null;
+    const rid = this.normalizeUserIdString(this.currentMaterial.responsible_user_id);
     const payload: any = {
       ...this.currentMaterial,
       access_rule_sets,
       responsible_user_id: rid,
-      responsible_leader: rid || this.currentMaterial.responsible_leader || null,
+      responsible_leader: rid || this.normalizeUserIdString(this.currentMaterial.responsible_leader),
       password_expires_at: this.passwordExpiresInput
         ? new Date(this.passwordExpiresInput).toISOString()
         : null
@@ -786,14 +887,18 @@ loadResponsibleUsers(): void {
           role: r.role || '',
           classification: r.classification || '',
           position: r.position || '',
+          department: r.department || '',
           role_required: !!r.role_required,
           classification_required: !!r.classification_required,
           position_required: !!r.position_required,
-          responsible_user_id: r.responsible_user_id || ''
+          department_required: !!r.department_required,
+          responsible_user_id: this.normalizeUserIdString(r.responsible_user_id) || ''
         }))
       : [];
-    this.currentMaterial.responsible_user_id =
-      material.responsible_user_id || material.responsible_leader || null;
+    const resp =
+      this.normalizeUserIdString(material.responsible_user_id) ||
+      this.normalizeUserIdString(material.responsible_leader);
+    this.currentMaterial.responsible_user_id = resp || '';
     this.passwordExpiresInput = material.password_expires_at
       ? this.toDatetimeLocalValue(String(material.password_expires_at))
       : '';
@@ -846,7 +951,7 @@ loadResponsibleUsers(): void {
       required_departments: [],
       required_positions: [],
       access_password: '',
-      responsible_user_id: null,
+      responsible_user_id: '',
       responsible_leader: null
     };
     this.passwordExpiresInput = '';

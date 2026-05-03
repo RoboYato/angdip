@@ -69,12 +69,6 @@ import { openPrintableReport, buildOverallAdminReportBody, type PrintableReportK
       </div>
 
       <div class="progress-table-section">
-        <div class="report-toolbar no-print">
-          <span class="report-toolbar-label">Печать сводки по всей системе:</span>
-          <button type="button" class="btn btn-print-report" (click)="printOverallReport()" [disabled]="overallReportLoading">
-            {{ overallReportLoading ? 'Загрузка…' : '📄 Сформировать общий отчёт' }}
-          </button>
-        </div>
         <h3>Детальный прогресс</h3>
         <div class="table-container">
           <table class="table" *ngIf="userProgress.length > 0">
@@ -230,24 +224,6 @@ import { openPrintableReport, buildOverallAdminReportBody, type PrintableReportK
       max-width: 220px;
       font-size: 12px;
       word-break: break-word;
-    }
-
-    .report-toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 16px;
-      padding: 12px 14px;
-      background: #e8f5e9;
-      border: 1px solid #a5d6a7;
-      border-radius: 8px;
-    }
-
-    .report-toolbar-label {
-      font-size: 14px;
-      color: #1b5e20;
-      font-weight: 500;
     }
 
     .breadcrumb a {

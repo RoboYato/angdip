@@ -32,9 +32,11 @@ function mapRuleRow(row: Record<string, unknown>): AccessRuleSetRow {
     role: (row.role as string) ?? null,
     classification: (row.classification as string) ?? null,
     position: (row.position as string) ?? null,
+    department: (row.department as string) ?? null,
     role_required: !!row.role_required,
     classification_required: !!row.classification_required,
-    position_required: !!row.position_required
+    position_required: !!row.position_required,
+    department_required: !!row.department_required
   };
 }
 
@@ -130,8 +132,8 @@ export async function abacMiddleware(
     const requiredRoles = materialRolesResult.rows.map((row) => row.role_name as string);
 
     const ruleSetsResult = await pool.query(
-      `SELECT role, classification, "position" as position,
-              role_required, classification_required, position_required, sort_order
+      `SELECT role, classification, "position" as position, department,
+              role_required, classification_required, position_required, department_required, sort_order
        FROM material_access_rule_sets
        WHERE material_id = $1
        ORDER BY sort_order ASC`,
@@ -148,6 +150,7 @@ export async function abacMiddleware(
     const userCtx: UserAccessRuleContext = {
       roles: userAttributes.roles,
       accessLevelCodes: userAccessCodes,
+      department: userAttributes.department ?? null,
       positionText: userAttributes.position ?? null,
       positionId: ur.position_id ?? null,
       positionName: ur.position_name ?? null

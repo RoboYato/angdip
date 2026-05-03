@@ -507,6 +507,7 @@ getLevelClass(code: string): string {
     this.userForm.reset();
     this.editingId = null;
     this.selectedUserRoles = [];
+    this.selectedAccessLevels = [];
   }
 private syncAccessLevels(userId: string): void {
   // Удаляем старые связи
@@ -531,7 +532,7 @@ private syncAccessLevels(userId: string): void {
       this.adminService.updateUser(this.editingId, data).subscribe({
         next: (updated) => {
           this.syncRoles(updated.id || this.editingId!);
-          //this.syncAccessLevels(updated.id || this.editingId!);
+          this.syncAccessLevels(updated.id || this.editingId!);
           this.loadUsers();
           this.closeForm();
         },
@@ -553,19 +554,6 @@ private syncAccessLevels(userId: string): void {
       });
     }
   }
-
-//private syncAccessLevels(userId: string): void {
-  // Удаляем старые связи
-  //this.adminService.removeAllUserAccessLevels(userId).subscribe({
-    //next: () => {
-      // Добавляем новые
-      //for (const levelId of this.selectedAccessLevels) {
-        //this.adminService.addUserAccessLevel(userId, levelId).subscribe();
-      //}
-    //},
-    //error: (err) => console.error('Ошибка обновления уровней доступа:', err)
-  //});
-//}
 
   private syncRoles(userId: string): void {
     // Удаляем все старые роли, назначаем новые

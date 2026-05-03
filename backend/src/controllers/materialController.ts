@@ -20,9 +20,11 @@ export type AccessRuleSetInput = {
   role?: string | null;
   classification?: string | null;
   position?: string | null;
+  department?: string | null;
   role_required?: boolean;
   classification_required?: boolean;
   position_required?: boolean;
+  department_required?: boolean;
   responsible_user_id?: string | null;
 };
 
@@ -38,17 +40,19 @@ export async function replaceMaterialAccessRuleSets(
   for (const s of sets) {
     await pool.query(
       `INSERT INTO material_access_rule_sets (
-        id, material_id, role, classification, "position",
-        role_required, classification_required, position_required, sort_order, responsible_user_id
-      ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        id, material_id, role, classification, "position", department,
+        role_required, classification_required, position_required, department_required, sort_order, responsible_user_id
+      ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         materialId,
         s.role || null,
         s.classification || null,
         s.position || null,
+        s.department != null && String(s.department).trim() !== '' ? String(s.department).trim() : null,
         !!s.role_required,
         !!s.classification_required,
         !!s.position_required,
+        !!s.department_required,
         sort++,
         s.responsible_user_id || null
       ]
@@ -66,6 +70,15 @@ function normalizeUuidOrNull(value: unknown): string | null {
     return null;
   }
   return String(value);
+}
+
+/** UUID ответственного из тела запроса (Angular иногда присылает строку "null"). */
+function sanitizeResponsibleUserId(value: unknown): string | null {
+  const s = normalizeUuidOrNull(value)?.trim();
+  if (!s || s.toLowerCase() === 'null') {
+    return null;
+  }
+  return /^[0-9a-fA-F-]{36}$/.test(s) ? s : null;
 }
 
 export async function getAllMaterials(req: AuthRequest, res: Response) {
@@ -97,7 +110,8 @@ export async function getAllMaterials(req: AuthRequest, res: Response) {
           SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.sort_order), '[]'::json)
           FROM (
             SELECT mars.id, mars.role, mars.classification, mars."position" AS position,
-                   mars.role_required, mars.classification_required, mars.position_required,
+                   mars.department, mars.role_required, mars.classification_required,
+                   mars.position_required, mars.department_required,
                    mars.sort_order, mars.responsible_user_id
             FROM material_access_rule_sets mars
             WHERE mars.material_id = m.id
@@ -214,7 +228,11 @@ export async function createMaterial(req: AuthRequest, res: Response) {
 
     const hashedPassword = access_password ? await bcrypt.hash(access_password, 10) : null;
 
-    const resolvedResponsibleId = responsible_user_id || null;
+    const resolvedResponsibleId =
+      sanitizeResponsibleUserId(responsible_user_id) ??
+      (typeof responsible_leader === 'string' && responsible_leader.trim().match(/^[0-9a-fA-F-]{36}$/)
+        ? responsible_leader.trim()
+        : null);
     const leaderVarchar =
       resolvedResponsibleId ||
       (typeof responsible_leader === 'string' && responsible_leader.trim()
@@ -1138,6 +1156,16 @@ export async function getDocumentation(req: AuthRequest, res: Response) {
       return res.status(401).json({ message: 'Не авторизован' });
     }
 
+    const userRes = await pool.query(
+      `SELECT u.department, u.position, u.position_id::text AS position_id
+       FROM users u WHERE u.id = $1`,
+      [req.user.userId]
+    );
+    const ur = userRes.rows[0] || {};
+    const userDept = ur.department != null ? String(ur.department).trim() : '';
+    const userPosId = ur.position_id != null ? String(ur.position_id).trim() : '';
+    const userPosText = ur.position != null ? String(ur.position).trim() : '';
+
     const documentationResult = await pool.query(
       `SELECT m.id, m.title, m.description, m.created_at,
         al.name as access_level_name,
@@ -1147,8 +1175,32 @@ export async function getDocumentation(req: AuthRequest, res: Response) {
        LEFT JOIN access_levels al ON m.access_level_id = al.id
        WHERE m.material_type = 'documentation'
          AND m.status = 'published'
+         AND (
+           COALESCE(jsonb_array_length(COALESCE(m.required_departments::jsonb, '[]'::jsonb)), 0) = 0
+           OR (
+             length(trim($1::text)) > 0 AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.required_departments::jsonb, '[]'::jsonb)) d
+               WHERE trim(d) = trim($1)
+             )
+           )
+         )
+         AND (
+           COALESCE(jsonb_array_length(COALESCE(m.required_positions::jsonb, '[]'::jsonb)), 0) = 0
+           OR (
+             length(trim($2::text)) > 0 AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.required_positions::jsonb, '[]'::jsonb)) p
+               WHERE trim(p) = trim($2)
+             )
+           )
+           OR (
+             length(trim($3::text)) > 0 AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.required_positions::jsonb, '[]'::jsonb)) p
+               WHERE trim(p) = trim($3)
+             )
+           )
+         )
        ORDER BY m.order_num ASC NULLS LAST, m.created_at DESC`,
-      []
+      [userDept, userPosId, userPosText]
     );
 
     res.json(documentationResult.rows);

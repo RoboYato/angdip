@@ -4,6 +4,7 @@ import { userMatchesAccessRuleSet, type AccessRuleSetRow, type UserAccessRuleCon
 
 export type UserRowForRules = {
   id: string;
+  department: string | null;
   position: string | null;
   position_id: string | null;
   position_name: string | null;
@@ -14,6 +15,7 @@ export type UserRowForRules = {
 export async function loadActiveUsersForRuleMatching(): Promise<UserRowForRules[]> {
   const { rows } = await pool.query(`
     SELECT u.id,
+           u.department,
            u.position,
            u.position_id,
            p.name AS position_name,
@@ -33,6 +35,7 @@ export async function loadActiveUsersForRuleMatching(): Promise<UserRowForRules[
   `);
   return rows.map((r) => ({
     id: r.id as string,
+    department: (r.department as string | null) ?? null,
     position: r.position as string | null,
     position_id: r.position_id as string | null,
     position_name: r.position_name as string | null,
@@ -45,6 +48,7 @@ export function userRowToContext(row: UserRowForRules): UserAccessRuleContext {
   return {
     roles: row.role_names,
     accessLevelCodes: row.access_codes,
+    department: row.department,
     positionText: row.position,
     positionId: row.position_id,
     positionName: row.position_name
@@ -56,9 +60,11 @@ export function ruleDbRowToAccessRule(row: Record<string, unknown>): AccessRuleS
     role: (row.role as string) ?? null,
     classification: (row.classification as string) ?? null,
     position: (row.position as string) ?? null,
+    department: (row.department as string) ?? null,
     role_required: !!row.role_required,
     classification_required: !!row.classification_required,
-    position_required: !!row.position_required
+    position_required: !!row.position_required,
+    department_required: !!row.department_required
   };
 }
 

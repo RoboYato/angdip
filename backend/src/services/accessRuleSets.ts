@@ -7,9 +7,12 @@ export interface AccessRuleSetRow {
   role: string | null;
   classification: string | null;
   position: string | null;
+  /** Отдел (как в профиле пользователя), если включена проверка */
+  department?: string | null;
   role_required: boolean;
   classification_required: boolean;
   position_required: boolean;
+  department_required?: boolean;
 }
 
 export interface UserAccessRuleContext {
@@ -17,6 +20,8 @@ export interface UserAccessRuleContext {
   roles: string[];
   /** Коды уровней доступа (грифов), назначенных пользователю */
   accessLevelCodes: string[];
+  /** Подразделение пользователя */
+  department?: string | null;
   /** Текстовое поле должности в профиле */
   positionText?: string | null;
   /** UUID должности в профиле */
@@ -48,6 +53,13 @@ export function userMatchesAccessRuleSet(
     const byId = user.positionId != null && String(user.positionId) === String(r);
     const byName = user.positionName != null && user.positionName === r;
     if (!byText && !byId && !byName) {
+      return false;
+    }
+  }
+  if (rule.department_required) {
+    const need = rule.department?.trim();
+    const got = user.department?.trim();
+    if (!need || !got || got !== need) {
       return false;
     }
   }
