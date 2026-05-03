@@ -53,7 +53,12 @@ export function userMatchesAccessRuleSet(
     return false;
   }
   if (rule.role_required) {
-    if (!rule.role || !user.roles.includes(rule.role)) {
+    const need = rule.role?.trim();
+    if (!need) {
+      return false;
+    }
+    const ok = user.roles.some((rn) => (rn || '').trim().toLowerCase() === need.toLowerCase());
+    if (!ok) {
       return false;
     }
   }
@@ -75,8 +80,8 @@ export function userMatchesAccessRuleSet(
     }
   }
   if (rule.department_required) {
-    const need = rule.department?.trim();
-    const got = user.department?.trim();
+    const need = rule.department?.trim()?.toLowerCase();
+    const got = user.department?.trim()?.toLowerCase();
     if (!need || !got || got !== need) {
       return false;
     }
@@ -142,13 +147,11 @@ export function legacyDocumentationDepartmentsPositionsOk(
 ): boolean {
   const reqDept = normalizeJsonStringArray(requiredDepartments);
   const reqPos = normalizeJsonStringArray(requiredPositions);
-  const deptOk =
-    reqDept.length === 0 ||
-    (userDept.length > 0 && reqDept.some((d) => d.trim() === userDept.trim()));
-  const posOk =
-    reqPos.length === 0 ||
-    (userPosId.length > 0 && reqPos.some((p) => p.trim() === userPosId.trim())) ||
-    (userPosText.length > 0 && reqPos.some((p) => p.trim() === userPosText.trim()));
+ const deptOk = reqDept.length === 0 ||
+  (userDept.length > 0 && reqDept.some(d => d.trim().toLowerCase() === userDept.trim().toLowerCase()));
+const posOk = reqPos.length === 0 ||
+  (userPosId.length > 0 && reqPos.some(p => p.trim() === userPosId.trim())) ||
+  (userPosText.length > 0 && reqPos.some(p => p.trim().toLowerCase() === userPosText.trim().toLowerCase()));
   return deptOk && posOk;
 }
 

@@ -913,14 +913,23 @@ export async function getUserAccessLevels(req: AuthRequest, res: Response) {
 // Добавить уровень доступа пользователю
 export async function addUserAccessLevel(req: AuthRequest, res: Response) {
   try {
+    if (!req.user?.isAdmin) {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
     const { userId } = req.params;
-    const { accessLevelId } = req.body;
-    
+    const accessLevelId =
+      (req.body as { accessLevelId?: string; levelId?: string }).accessLevelId ??
+      (req.body as { accessLevelId?: string; levelId?: string }).levelId;
+
     const userCheck = await pool.query('SELECT id FROM users WHERE id = $1 AND is_deleted = false', [userId]);
     if (userCheck.rows.length === 0) {
       return res.status(404).json({ message: 'Пользователь не найден' });
     }
-    
+
+    if (!accessLevelId) {
+      return res.status(400).json({ message: 'Требуется accessLevelId или levelId' });
+    }
+
     const levelCheck = await pool.query('SELECT id FROM access_levels WHERE id = $1', [accessLevelId]);
     if (levelCheck.rows.length === 0) {
       return res.status(404).json({ message: 'Уровень доступа не найден' });
@@ -943,6 +952,9 @@ export async function addUserAccessLevel(req: AuthRequest, res: Response) {
 // Удалить уровень доступа пользователя
 export async function removeUserAccessLevel(req: AuthRequest, res: Response) {
   try {
+    if (!req.user?.isAdmin) {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
     const { userId, levelId } = req.params;
     
     await pool.query(
@@ -960,13 +972,14 @@ export async function removeUserAccessLevel(req: AuthRequest, res: Response) {
 // Удалить все уровни доступа пользователя
 export async function removeAllUserAccessLevels(req: AuthRequest, res: Response) {
   try {
+    if (!req.user?.isAdmin) {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
     const { userId } = req.params;
-    
     await pool.query('DELETE FROM user_access_levels WHERE user_id = $1', [userId]);
-    
-    res.json({ message: 'All access levels removed from user' });
+    res.json({ message: 'All access levels removed' });
   } catch (error) {
-    console.error('Error removing all user access levels:', error);
+    console.error('Remove all access levels error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 }
@@ -1059,3 +1072,5 @@ export async function getDistinctDepartments(req: AuthRequest, res: Response) {
     res.status(500).json({ message: 'Internal server error' });
   }
 }
+
+

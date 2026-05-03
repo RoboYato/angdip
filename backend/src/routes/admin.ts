@@ -32,6 +32,26 @@ router.post('/users', authMiddleware, adminMiddleware, adminController.createUse
 router.put('/users/:id', authMiddleware, adminMiddleware, adminController.updateUser);
 router.delete('/users/:id', authMiddleware, adminMiddleware, adminController.deactivateUser);
 
+/** Грифы пользователя: конкретные пути — до любых широких /users/:id/... при необходимости расширения */
+router.delete(
+  '/users/:userId/access-levels',
+  authMiddleware,
+  adminMiddleware,
+  adminController.removeAllUserAccessLevels
+);
+router.post(
+  '/users/:userId/access-levels',
+  authMiddleware,
+  adminMiddleware,
+  adminController.addUserAccessLevel
+);
+router.delete(
+  '/users/:userId/access-levels/:levelId',
+  authMiddleware,
+  adminMiddleware,
+  adminController.removeUserAccessLevel
+);
+
 // User Roles
 router.post('/user-roles', authMiddleware, adminMiddleware, adminController.assignRoleToUser);
 router.delete('/user-roles/:userId/:roleId', authMiddleware, adminMiddleware, adminController.removeRoleFromUser);

@@ -89,7 +89,17 @@ export async function abacMiddleware(
           : []
         : [];
 
-    if (!material.access_level_code || material.access_level_code === 'PUBLIC') {
+    const ruleCountRes = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM material_access_rule_sets WHERE material_id = $1`,
+      [materialId]
+    );
+    const hasAbacRules = (ruleCountRes.rows[0]?.c ?? 0) > 0;
+
+    /** Публичный гриф без наборов ABAC — пропускаем проверку. С наборами — проверяем как обычно. */
+    if (
+      (!material.access_level_code || material.access_level_code === 'PUBLIC') &&
+      !hasAbacRules
+    ) {
       return next();
     }
 

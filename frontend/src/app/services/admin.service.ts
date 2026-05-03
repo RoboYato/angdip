@@ -69,12 +69,15 @@ export class AdminService {
     return this.http.delete(`${this.apiUrl}/user-roles/${userId}/${roleId}`);
   }
 
-  removeAllUserAccessLevels(userId: number | string): Observable<any> {
+  removeAllUserAccessLevels(userId: string): Observable<any> {
     return this.http.delete(`${this.apiUrl}/users/${userId}/access-levels`);
   }
 
   addUserAccessLevel(userId: number | string, levelId: number | string): Observable<any> {
-    return this.http.post(`${this.apiUrl}/users/${userId}/access-levels`, { levelId });
+    return this.http.post(`${this.apiUrl}/users/${userId}/access-levels`, {
+      levelId,
+      accessLevelId: levelId
+    });
   }
 
   /** Уникальные названия отделов (пользователи + материалы) для подсказок в формах */

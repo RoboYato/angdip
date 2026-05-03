@@ -579,7 +579,7 @@ private syncAccessLevels(userId: string): void {
   editUser(user: any): void {
     this.editingId = user.id;
     this.selectedUserRoles = (user.roles || []).map((r: any) => r.id);
-    this.selectedAccessLevels = (user.access_levels || []).map((l: any) => l.id);  
+    this.selectedAccessLevels = (user.access_levels || []).map((l: any) => String(l.id));
     this.userForm.patchValue({
       fio: user.fio,
       login: user.login,

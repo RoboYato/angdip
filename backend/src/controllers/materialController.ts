@@ -1363,10 +1363,6 @@ export async function getDocumentation(req: AuthRequest, res: Response) {
     const out: Record<string, unknown>[] = [];
     for (const row of documentationResult.rows) {
       const levelCode = row.access_level_code as string;
-      if (!levelCode || levelCode === 'PUBLIC') {
-        out.push(stripDocumentationRuleSecrets(row as Record<string, unknown>));
-        continue;
-      }
 
       let rules = row.access_rule_sets;
       if (typeof rules === 'string') {
@@ -1379,22 +1375,28 @@ export async function getDocumentation(req: AuthRequest, res: Response) {
       const ruleArr = Array.isArray(rules) ? (rules as AccessRuleSetRow[]) : [];
       const hasUnlock = unlocked.has(row.id as string);
 
-      if (ruleArr.length === 0) {
-        if (
-          legacyDocumentationDepartmentsPositionsOk(
-            userDept,
-            userPosId,
-            userPosText,
-            row.required_departments,
-            row.required_positions
-          )
-        ) {
+      /** Есть наборы ABAC — фильтруем всегда, даже если у материала гриф «Публичный». */
+      if (ruleArr.length > 0) {
+        if (documentationVisibleForUser(userCtx, ruleArr, hasUnlock)) {
           out.push(stripDocumentationRuleSecrets(row as Record<string, unknown>));
         }
         continue;
       }
 
-      if (documentationVisibleForUser(userCtx, ruleArr, hasUnlock)) {
+      if (!levelCode || levelCode === 'PUBLIC') {
+        out.push(stripDocumentationRuleSecrets(row as Record<string, unknown>));
+        continue;
+      }
+
+      if (
+        legacyDocumentationDepartmentsPositionsOk(
+          userDept,
+          userPosId,
+          userPosText,
+          row.required_departments,
+          row.required_positions
+        )
+      ) {
         out.push(stripDocumentationRuleSecrets(row as Record<string, unknown>));
       }
     }
